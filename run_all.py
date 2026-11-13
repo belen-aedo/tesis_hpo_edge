@@ -52,7 +52,7 @@ def run(cmd: list[str], cwd: Path, env_extra: dict | None = None) -> None:
 
 
 # Corre los pasos del preprocessor del profesor, sin modificar su codigo
-def etapa_preprocesar(cfg_args: list[str], features_mode: str) -> None:
+def etapa_preprocesar(cfg: dict) -> None:
     if not PRE_V2.exists():
         sys.exit("Falta el preprocessor del profesor en preprocessor/ (vea LEEME en esa carpeta).")
     run([sys.executable, ROOT / "scripts" / "0_configurar_preprocessor.py"], ROOT)
@@ -69,12 +69,15 @@ def etapa_preprocesar(cfg_args: list[str], features_mode: str) -> None:
     # PYTHONUTF8: el codigo del profesor imprime emojis y lee config.yaml con open() sin
     # codificacion; en Windows (cp1252) eso falla si la salida se redirige o hay tildes.
     env = {"KMP_DUPLICATE_LIB_OK": "True", "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
-    # Cada paso del preprocessor se ejecuta para el dataset Ton-IoT
-    ds = "Ton-IoT"
-    pasos = ["00_source_preprocessing/run.py", "01_train_test_split.py",
-             "02_preprocessing.py", "03_stratified_subset.py"]
+    # Cada paso del preprocessor se ejecuta para el dataset de la configuracion
+    # (Ton-IoT = version 1; Ton-IoT-v2 = deduplicada, estratificada, log y one-hot completo)
+    ds = cfg["dataset"]["name"]
+    pasos = ["00_source_preprocessing/run.py", "01_train_test_split.py", "02_preprocessing.py"]
+    # El paso 03 (muestra del 10 %) solo hace falta con input.variant: stratified
+    if cfg["input"]["variant"] == "stratified":
+        pasos.append("03_stratified_subset.py")
     # El paso 04 solo hace falta si se usan las columnas elegidas por el profesor
-    if features_mode == "selector":
+    if cfg["features"]["mode"] == "selector":
         pasos.append("04_feature_selection.py")
     for p in pasos:
         run([sys.executable, p, ds], PRE_V2, env)
@@ -103,14 +106,14 @@ def main() -> None:
 
     sys.path.insert(0, str(SRC))
     from common import load_config
-    features_mode = load_config(args.config)["features"]["mode"]
+    cfg_dict = load_config(args.config)
 
     py = sys.executable
     # Cada etapa ejecuta su propio script
     for e in etapas:
         print(f"\n{'=' * 70}\n ETAPA: {e}\n{'=' * 70}", flush=True)
         if e == "preprocesar":
-            etapa_preprocesar(cfg, features_mode)
+            etapa_preprocesar(cfg_dict)
         elif e == "splits":
             run([py, SRC / "1_prepare_splits.py", *cfg], ROOT)
         elif e == "diagnostico":

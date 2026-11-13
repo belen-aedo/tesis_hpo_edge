@@ -91,15 +91,18 @@ def _run_trials(objective, direction: str, seed: int, n_trials: int):
         if os.environ.get("ALLOW_RANDOM_FALLBACK") != "1":
             raise SystemExit("Falta optuna: pip install optuna")
         print("  [!] Optuna no instalado: BUSQUEDA ALEATORIA (solo prueba de humo)")
-        done = []
+        done, history = [], []
         for k in range(n_trials):
             tr = RandomTrial(seed * 1000 + k)
             try:
                 v = objective(tr)
             except PrunedTrial:
+                history.append({"number": k, "state": "PRUNED", "value": None,
+                                "params": dict(tr.params), "user_attrs": dict(tr.user_attrs)})
                 continue
             done.append({"value": v, "params": dict(tr.params), "user_attrs": dict(tr.user_attrs)})
-        return done, n_trials - len(done)
+            history.append({"number": k, "state": "COMPLETE", **done[-1]})
+        return done, n_trials - len(done), history
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -119,7 +122,11 @@ def _run_trials(objective, direction: str, seed: int, n_trials: int):
     # Se conservan solo los trials que terminaron con un valor
     done = [{"value": t.value, "params": dict(t.params), "user_attrs": dict(t.user_attrs)}
             for t in study.trials if t.value is not None]
-    return done, len(study.trials) - len(done)
+    # Historial de TODOS los intentos (tambien los descartados y su motivo), para auditar
+    # la busqueda: el descarte por latencia depende del tiempo medido en el equipo.
+    history = [{"number": t.number, "state": t.state.name, "value": t.value,
+                "params": dict(t.params), "user_attrs": dict(t.user_attrs)} for t in study.trials]
+    return done, len(study.trials) - len(done), history
 
 
 # Completa los hiperparametros con la semilla y, en el autoencoder, con el backend
@@ -179,7 +186,7 @@ def run_study(cfg, detector_name: str, metric: str, seed: int, n_trials: int, da
         return float(value) if np.isfinite(value) else penalty_for(metric)
 
     t0 = time.perf_counter()
-    done, n_pruned = _run_trials(objective, direction, seed, n_trials)
+    done, n_pruned, history = _run_trials(objective, direction, seed, n_trials)
     elapsed = time.perf_counter() - t0
     if not done:
         raise SystemExit(f"Ningun trial completo para {detector_name}/{metric}: revise "
@@ -210,7 +217,7 @@ def run_study(cfg, detector_name: str, metric: str, seed: int, n_trials: int, da
             "best_value": top[0]["value"], "best_params": top[0]["params"],
             "best_latency_ms": top[0]["user_attrs"].get("latency_ms"),
             "dev_latency_budget_ms": budget, "q": q_fixed, "top_k": entries,
-            "elapsed_s": round(elapsed, 2)}
+            "elapsed_s": round(elapsed, 2), "trials": history}
 
 
 def build_baseline(cfg, detector_name: str, seed: int, data: dict) -> list[dict]:
@@ -321,7 +328,7 @@ def main() -> None:
             res = run_study(cfg, detector, metric, seed, n_trials, data)
             save_json(res, out_dir / f"{tag}.json")
             update_index(cfg, res["top_k"])
-            summaries.append({k: v for k, v in res.items() if k != "top_k"})
+            summaries.append({k: v for k, v in res.items() if k not in ("top_k", "trials")})
             print(f"  mejor valor {res['best_value']:.4f} | completos {res['n_completed']} "
                   f"| descartados {res['n_pruned']} | {res['elapsed_s']}s")
 

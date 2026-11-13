@@ -685,6 +685,83 @@
         ],
         "use_sample_for_selection": true
     },
+    "Ton-IoT-v2": {
+        "source_config": {
+            "type": "pcap_directory",
+            "paths": [
+                "/Datasets/Sources//TON-IoT/PCAP/Train_Test_Network_dataset/"
+            ],
+            "ground_truth_file": "/Datasets/Sources/TON-IoT/Train_Test_datasets/Train_Test_Network_dataset/Train_Test_Labels.csv"
+        },
+        "path": "Datasets/Sources/TON-IoT/Train_Test_datasets/Train_Test_Network_dataset/preprocessed_v2.csv",
+        "label": "category",
+        "anomaly_label": "anormal",
+        "normal_label": "normal",
+        "category_col": "label",
+        "sub_category_col": "type",
+        "id_cols": [
+            "ts",
+            "src_ip",
+            "dst_ip",
+            "src_port",
+            "dst_port",
+            "dns_query",
+            "http_uri",
+            "http_user_agent",
+            "ssl_subject",
+            "ssl_issuer"
+        ],
+        "numerical_cols": [
+            "duration",
+            "src_bytes",
+            "dst_bytes",
+            "missed_bytes",
+            "src_pkts",
+            "src_ip_bytes",
+            "dst_pkts",
+            "dst_ip_bytes",
+            "http_request_body_len",
+            "http_response_body_len"
+        ],
+        "categorical_cols": [
+            "proto",
+            "service",
+            "conn_state",
+            "dns_qclass",
+            "dns_qtype",
+            "dns_rcode",
+            "dns_AA",
+            "dns_RD",
+            "dns_RA",
+            "dns_rejected",
+            "ssl_version",
+            "ssl_cipher",
+            "ssl_resumed",
+            "ssl_established",
+            "http_trans_depth",
+            "http_method",
+            "http_version",
+            "http_status_code",
+            "http_orig_mime_types",
+            "http_resp_mime_types",
+            "weird_name",
+            "weird_addl",
+            "weird_notice"
+        ],
+        "timestamp_col": [
+            "ts"
+        ],
+        "timestamp_format": [
+            "Unix_seconds_fraction"
+        ],
+        "use_sample_for_selection": true,
+        "deduplicate": true,
+        "stratify_split": true,
+        "test_size": 0.2,
+        "split_seed": 42,
+        "log_transform": true,
+        "onehot_full_vocabulary": true
+    },
     "Ton-IoT-NFStream": {
         "source_config": {
             "type": "pcap_directory",

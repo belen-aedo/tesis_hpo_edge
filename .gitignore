@@ -7,3 +7,5 @@ outputs/*
 !outputs/.gitkeep
 Datasets/Parquet/*
 Datasets/Sources/TON-IoT/Train_Test_datasets/Train_Test_Network_dataset/*.csv
+data/splits_v2/
+outputs_v2/

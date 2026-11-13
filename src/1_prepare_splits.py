@@ -345,6 +345,22 @@ def main() -> None:
                 "attack_types": {t: int((types_te[idx] == t).sum())
                                  for t in sorted(set(types_te[idx]) - {"normal"})}}
 
+    # Auditoria de filas identicas entre bloques (con las variables elegidas). Una fila de
+    # prueba identica a una de entrenamiento hace que el resultado salga optimista.
+    def huellas(df):
+        return pd.util.hash_pandas_object(df, index=False)
+    h_tr, h_va = huellas(X_train), huellas(X_val)
+    h_or = huellas(X_test.iloc[idx_orc].reset_index(drop=True))
+    h_fi = huellas(X_test.iloc[idx_fin].reset_index(drop=True))
+    set_tr = set(h_tr)
+    norm_fi = y_te[idx_fin] == 0
+    duplicados = {
+        "train_filas_unicas": round(float(h_tr.nunique() / max(len(h_tr), 1)), 4),
+        "val_identico_a_train": round(float(h_va.isin(set_tr).mean()), 4),
+        "test_final_normal_identico_a_train": round(float(h_fi[norm_fi].isin(set_tr).mean()), 4),
+        "test_final_identico_a_test_oracle": round(float(h_fi.isin(set(h_or)).mean()), 4),
+    }
+
     # Registro de la particion: tamanos, columnas y hashes de cada bloque
     manifest = {
         "dataset": cfg["dataset"]["name"], "input_variant": cfg["input"]["variant"],
@@ -356,6 +372,7 @@ def main() -> None:
             "test_oracle": {**block(idx_orc), "use": "solo escenario oraculo"},
             "test_final": {**block(idx_fin), "use": "solo 5_evaluate.py, una vez"},
         },
+        "duplicados": duplicados,
         "sha256": {n: sha256_of(out / f"{n}.{ext}")
                    for n in ("train", "val", "test_oracle", "test_final")},
         "note": ("test_final esta aislado: ningun script de optimizacion lo lee. "
@@ -368,6 +385,10 @@ def main() -> None:
     for k, v in manifest["splits"].items():
         extra = f" | ataque {v['attack_ratio']:.1%}" if "attack_ratio" in v else ""
         print(f"  {k:12s}: {v['rows']:>8,} filas{extra}")
+    print("Filas identicas entre bloques:", duplicados)
+    if duplicados["test_final_normal_identico_a_train"] > 0.10:
+        print("[!] Mas del 10 % del normal de test_final ya esta en train: el FPR saldra optimista. "
+              "Use un dataset deduplicado (preprocessor: 'deduplicate': true).")
     # Avisos si los datos pueden dar resultados enganosos o ruidosos
     ratio = manifest["splits"]["test_final"]["attack_ratio"]
     if ratio > 0.5:

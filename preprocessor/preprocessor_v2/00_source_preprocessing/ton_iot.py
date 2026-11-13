@@ -23,12 +23,20 @@ from base_preprocessor import SourcePreprocessor
 
 class TonIoTPreprocessor(SourcePreprocessor):
 
+    # Archivos de origen aceptados, en orden de preferencia. Nunca se lee el archivo
+    # de salida: antes, si faltaba Train_Test_Labels.csv, se leia self.output_path,
+    # es decir, el mismo archivo que se estaba escribiendo.
+    SOURCE_NAMES = ("Train_Test_Labels.csv", "Train_Test_Network.csv", "train_test_network.csv")
+
     def _iter_raw_chunks(self) -> Iterator[pd.DataFrame]:
-        source_path = (
-            self.output_path.parent / "Train_Test_Labels.csv"
-        )
-        if not source_path.exists():
-            source_path = self.output_path
+        folder = self.output_path.parent
+        out = self.output_path.resolve()
+        candidates = [folder / n for n in self.SOURCE_NAMES]
+        source_path = next((p for p in candidates if p.exists() and p.resolve() != out), None)
+        if source_path is None:
+            raise FileNotFoundError(
+                f"No se encontro el CSV original de TON_IoT en {folder} "
+                f"(se busco: {', '.join(self.SOURCE_NAMES)}).")
         yield from self._read_csv_chunks(source_path)
 
     def transform_chunk(self, chunk: pd.DataFrame) -> pd.DataFrame:

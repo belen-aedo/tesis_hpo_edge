@@ -8,6 +8,18 @@ from sklearn.impute import SimpleImputer
 import gc
 from config import load_config
 
+def log_transform(chunk, num_cols, info):
+    """Con 'log_transform' en config.json aplica sign(x)*log(1+|x|) a las numericas.
+    Bytes, paquetes y duracion tienen colas de varios ordenes de magnitud (p. ej.
+    src_bytes: p99 = 3e3, maximo = 3,9e9); sin esto, MinMax deja casi todo el trafico
+    en ~0 y un solo valor extremo domina las distancias. Se aplica igual en las
+    estadisticas y en la transformacion, asi train y test se tratan igual."""
+    if info.get('log_transform') and num_cols:
+        v = chunk[num_cols].astype('float64')
+        chunk[num_cols] = np.sign(v) * np.log1p(np.abs(v))
+    return chunk
+
+
 def calculate_global_stats(parquet_path, info, chunksize):
     """Calcula stats sobre el dataset de TRAIN para evitar leakage."""
     num_cols_list = info.get('numerical_cols', [])
@@ -26,7 +38,8 @@ def calculate_global_stats(parquet_path, info, chunksize):
         for col in num_cols_in_chunk:
             chunk[col] = pd.to_numeric(chunk[col], errors='coerce')
         chunk.replace([np.inf, -np.inf], np.nan, inplace=True)
-            
+        chunk = log_transform(chunk, num_cols_in_chunk, info)
+
         global_mins = chunk[num_cols_in_chunk].min().combine(global_mins, min)
         global_maxs = chunk[num_cols_in_chunk].max().combine(global_maxs, max)
         global_sums = chunk[num_cols_in_chunk].sum().add(global_sums, fill_value=0)
@@ -44,6 +57,7 @@ def process_chunk(chunk, info, imputer, scaler, all_encoded_columns=None):
     for col in num_cols:
          chunk[col] = pd.to_numeric(chunk[col], errors='coerce')
     chunk.replace([np.inf, -np.inf], np.nan, inplace=True)
+    chunk = log_transform(chunk, num_cols, info)
 
     if num_cols and imputer and scaler:
         chunk[num_cols] = imputer.transform(chunk[num_cols])
@@ -162,7 +176,12 @@ def main(override_datasets=None):
         
         # 2. Definir Schema OHE utilizando el propio train
         print("Definiendo el esquema Parquet final...")
-        sample_df = pq.read_table(train_raw).slice(0, min(CHUNKSIZE, 10000)).to_pandas()
+        if info.get('onehot_full_vocabulary'):
+            # Todas las categorias que aparecen en TRAIN tienen su columna. Con la muestra
+            # de 10.000 filas, las categorias que no aparecian en ella se perdian.
+            sample_df = pq.read_table(train_raw).to_pandas()
+        else:
+            sample_df = pq.read_table(train_raw).slice(0, min(CHUNKSIZE, 10000)).to_pandas()
         schema, final_feats = build_schema(sample_df, info)
 
         # 3. Process Train

@@ -33,6 +33,8 @@ PREPROCESSOR_REGISTRY: dict[str, type] = {
     "Bot-IoT-full":       BotIoTFullPreprocessor,
     "DS2OS":              DS2OSPreprocessor,
     "Ton-IoT":            TonIoTPreprocessor,
+    # Misma fuente con opciones de particion y codificacion mejoradas (config.json).
+    "Ton-IoT-v2":         TonIoTPreprocessor,
     # IOT23 tiene tres variantes del mismo proceso de lectura de archivos .labeled;
     # la fracción de muestreo se controla en config.json via 'sample_fraction'.
     "IOT23":              IOT23Preprocessor,

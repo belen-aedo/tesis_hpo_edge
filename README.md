@@ -212,3 +212,30 @@ python run_all.py --etapas evaluar,reporte
    los datos reales y con Optuna. Como TensorFlow no está instalado, el autoencoder se entrenó con
    scikit-learn. La medición en la Raspberry Pi todavía está pendiente.
 
+
+## 8. Versión 2 del experimento (`config/experiment_v2.yaml`)
+
+```powershell
+python run_all.py --config config/experiment_v2.yaml                 # todo el flujo, versión 2
+python run_all.py --config config/experiment_v2.yaml --etapas splits # solo una etapa
+```
+
+La versión 2 corrige problemas del preprocesamiento encontrados al auditar los datos. Usa el
+dataset `Ton-IoT-v2` de `preprocessor/config.json` y escribe en `data/splits_v2/` y `outputs_v2/`,
+así que **la versión 1 queda intacta** para comparar. El resto del diseño (variables, umbral,
+espacios de búsqueda, trials, semillas y límites del borde) es idéntico.
+
+| Cambio | Dónde | Por qué |
+|---|---|---|
+| Se eliminan flujos repetidos y ambiguos **antes** de partir 80/20 (`deduplicate`) | `preprocessor_v2/01_train_test_split.py` | El 56 % de las filas de TON_IoT repetía las variables de otra; las copias quedaban en train y en test (FPR medido 0 % en flujos repetidos frente a 10,6 % en nuevos) |
+| Partición 80/20 estratificada por tipo de ataque (`stratify_split`) | `01_train_test_split.py` | Misma proporción de cada tipo en train y test |
+| `log(1+x)` en bytes, paquetes y duración (`log_transform`) | `preprocessor_v2/02_preprocessing.py` | Colas de varios órdenes de magnitud (src_bytes: p99 = 3·10³, máximo = 3,9·10⁹) |
+| One-hot con todas las categorías del train (`onehot_full_vocabulary`) | `02_preprocessing.py` | Antes solo con las primeras 10 000 filas |
+| `dns_query`, `http_uri`, `http_user_agent`, `ssl_subject` y `ssl_issuer` pasan a identificadores | `preprocessor/config.json` | Son textos propios del entorno de captura (nombres de dominio, URIs) y no generalizan a otra red |
+| El paso 00 nunca lee su propio archivo de salida | `00_source_preprocessing/ton_iot.py` | Error: sin `Train_Test_Labels.csv` leía el archivo que estaba escribiendo |
+| `manifest.json` registra las filas idénticas entre bloques | `src/1_prepare_splits.py` | Deja medido el problema en cada ejecución |
+| Cada búsqueda guarda el historial de todos sus intentos (también los descartados y su motivo) | `src/3_optimize.py` | Hace auditable la búsqueda; el descarte por latencia depende del tiempo medido |
+
+Efecto en los datos: 211 043 → 93 455 flujos únicos. Las filas idénticas entre bloques bajan de
+55 % a 0,5 % (validación frente a train) y de 56 % a 0,2 % (normal de `test_final` frente a train).
+Ransomware queda con 25 flujos por mitad de prueba: eran unos 60 flujos distintos repetidos miles de veces.
