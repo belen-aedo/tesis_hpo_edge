@@ -1,5 +1,5 @@
 """
-diagnose.py - revisa si cada metrica no supervisada sirve como guia.
+2_diagnose.py - revisa si cada metrica no supervisada sirve como guia.
 Conviene correrlo antes de optimize.
 
 Para cada detector se prueban N configuraciones al azar, y en cada una se mide:
@@ -17,7 +17,7 @@ diagnostico: no participa en ninguna eleccion de modelos. Los resultados tambien
 sirven para el capitulo de resultados (relacion entre criterio y desempeno).
 
 USO
-    python src/diagnose.py --n 40
+    python src/2_diagnose.py --n 40
 """
 
 from __future__ import annotations
@@ -51,24 +51,29 @@ def main() -> None:
     X_cal, X_obj = split_val(X_val, cfg)
     metrics = args.metrics or list(UNSUPERVISED)
 
+    # Una fila de resultados por cada configuracion probada
     recs = []
     for dname, Detector in DETECTORS.items():
         X_tr = train_for(cfg, dname, X_train)
         print(f"\n{dname}: {args.n} configuraciones aleatorias")
         for k in range(args.n):
+            # Elige una configuracion al azar (aqui no se usa Optuna)
             trial = RandomTrial(args.seed * 100000 + k)
             params = suggest_params(trial, dname, args.seed + k, cfg)
             if dname == "autoencoder":
                 params["backend"] = cfg["autoencoder"]["backend"]
             try:
+                # Entrena el modelo y fija el umbral, igual que en la optimizacion
                 det = Detector(**params).fit(X_tr).set_threshold(X_cal, cfg["threshold"]["q"])
             except Exception as exc:
                 print("  [!]", exc)
                 continue
+            # (b) Desempeno real, medido con las etiquetas de test_oracle
             s = det.scores(X_orc)
             r = {"detector": dname, "trial": k, **trial.params,
                  "MCC": supervised_metrics(y_orc, (s > det.threshold_).astype(int))["MCC"],
                  **ranking_metrics(y_orc, s)}
+            # (a) Valor de cada criterio no supervisado para el mismo modelo
             for m in metrics:
                 try:
                     r[m] = compute_objective(m, det, X_obj, cfg, ctx={
@@ -89,10 +94,12 @@ def main() -> None:
         for m in metrics:
             if m not in g or g[m].nunique() < 3:
                 continue
+            # Cambia el signo en los criterios que se minimizan: asi, rho positivo siempre es bueno
             sign = 1.0 if DIRECTION[m] == "maximize" else -1.0
             gg = g.dropna(subset=[m, "MCC", "AUROC"])
             if len(gg) < 3:
                 continue
+            # Compara el orden que da el criterio con el orden segun el desempeno real
             r_mcc = sign * spearmanr(gg[m], gg["MCC"]).statistic
             r_auc = sign * spearmanr(gg[m], gg["AUROC"]).statistic
             rows.append({"detector": dname, "metric": m, "rho_mcc": r_mcc,

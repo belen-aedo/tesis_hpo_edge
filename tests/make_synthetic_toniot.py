@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+# Columnas numericas y proporcion de cada tipo de ataque
 NUM = ["duration", "src_bytes", "dst_bytes", "missed_bytes", "src_pkts",
        "src_ip_bytes", "dst_pkts", "dst_ip_bytes", "http_request_body_len",
        "http_response_body_len"]
@@ -24,9 +25,11 @@ ATTACKS = {"ddos": 0.35, "scanning": 0.25, "password": 0.15, "xss": 0.10, "injec
            "mitm": 0.05}
 
 
+# Crea la tabla completa, con trafico normal y ataques
 def make(n_normal=6000, n_attack=2400, seed=0) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
 
+    # Genera n flujos de un tipo. Cada tipo tiene su propia distribucion de valores.
     def flows(n, kind):
         d = {}
         if kind == "normal":
@@ -72,6 +75,7 @@ def make(n_normal=6000, n_attack=2400, seed=0) -> pd.DataFrame:
             p = 0.02 + 0.3 * rng.random()
             d[f"cat_{j:02d}"] = (rng.random(n) < p * (3 if (kind != "normal" and j % 7 == 0) else 1)
                                  ).astype(np.int8)
+        # Columnas de prueba: constante, rara y correlacionada. La seleccion debe eliminarlas.
         d["const_col"] = np.zeros(n, dtype=np.int8)
         d["rare_col"] = (rng.random(n) < 0.00005).astype(np.int8)
         d["dup_src_bytes"] = d["src_bytes"] * 0.999 + 1.0   # casi identica a src_bytes (correlada)
@@ -79,6 +83,7 @@ def make(n_normal=6000, n_attack=2400, seed=0) -> pd.DataFrame:
         out["type"] = kind
         return out
 
+    # Junta el trafico normal con los ataques
     parts = [flows(n_normal, "normal")]
     shares = np.array(list(ATTACKS.values()))
     for (k, _), n in zip(ATTACKS.items(), np.round(shares * n_attack).astype(int)):
@@ -93,6 +98,7 @@ def make(n_normal=6000, n_attack=2400, seed=0) -> pd.DataFrame:
     return df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
 
 
+# Guarda los datos con el mismo formato del preprocessor: 80 % train y 20 % test
 def write(datasets_root: Path, name="Ton-IoT", seed=0, n_normal=6000, n_attack=2400) -> None:
     df = make(n_normal, n_attack, seed)
     cut = int(0.8 * len(df))

@@ -1,7 +1,6 @@
 """
-report.py - Etapa 5: tablas LaTeX para la tesis.
-
-Convierte los resultados de evaluate.py y edge_benchmark.py en archivos .tex que
+6_report.py - Etapa 5: tablas 
+Convierte los resultados de 5_evaluate.py y 4_edge_benchmark.py en archivos .tex que
 el documento incluye con \\input{}. Asi ningun numero del texto se escribe a mano.
 Si una tabla todavia no tiene datos, se genera con guiones y con la marca
 [Pendiente].
@@ -12,7 +11,7 @@ Genera en outputs/tables/:
     tab_mock_balance.tex       <- outputs/results/balance.csv
 
 USO
-    python src/report.py
+    python src/6_report.py
 """
 
 from __future__ import annotations
@@ -24,7 +23,9 @@ import pandas as pd
 
 from common import load_config, outputs_dir, results_dir
 
+# Texto para las celdas sin datos
 DASH = "---"
+# Nombres que aparecen en las tablas
 NAMES = {"iforest": "iForest", "lof": "LOF", "autoencoder": "AE"}
 METRIC_ES = {
     "por_defecto": "Por defecto",
@@ -38,10 +39,11 @@ METRIC_ES = {
 }
 
 
+# Arma el codigo LaTeX completo de una tabla
 def _wrap(caption: str, label: str, colspec: str, header: str, body: str,
           size: str = "\\scriptsize", pending: bool = False) -> str:
     tag = "[Pendiente] " if pending else ""
-    return f"""% Generado automaticamente por src/report.py -- no editar a mano
+    return f"""% Generado automaticamente por src/6_report.py -- no editar a mano
 \\begin{{table}}[t]
 \\caption{{{tag}{caption}}}
 \\label{{{label}}}
@@ -59,6 +61,7 @@ def _wrap(caption: str, label: str, colspec: str, header: str, body: str,
 """
 
 
+# Crea filas con guiones, para las tablas que aun no tienen datos
 def _pending_rows(cfg, n_dash: int, with_metric: bool = True) -> str:
     if not with_metric:
         return "\n".join(f"{NAMES[d]} & " + " & ".join([DASH] * n_dash) + " \\\\"
@@ -67,19 +70,23 @@ def _pending_rows(cfg, n_dash: int, with_metric: bool = True) -> str:
                      for d, ms in cfg["detectors"].items() for m in ["por_defecto"] + list(ms))
 
 
+# Tabla de deteccion: metricas promedio por detector y criterio
 def table_performance(cfg, path: Path) -> None:
     src = results_dir(cfg) / "final_evaluation.csv"
     header = ("\\textbf{Detector} & \\textbf{Criterio} & \\textbf{MCC} & \\textbf{BACC} & "
               "\\textbf{$F_1$} & \\textbf{Recall} & \\textbf{FPR} & \\textbf{FNR} \\\\")
     cols = "llcccccc"
     cap = "Capacidad de deteccion sobre el conjunto de prueba aislado."
+    # Si aun no hay resultados, deja la tabla marcada como pendiente
     if not src.exists():
-        path.write_text(_wrap(cap + " Requiere ejecutar optimize.py y evaluate.py.",
+        path.write_text(_wrap(cap + " Requiere ejecutar 3_optimize.py y 5_evaluate.py.",
                               "tab:mock_performance", cols, header, _pending_rows(cfg, 6),
                               pending=True), encoding="utf-8")
         return
     df = pd.read_csv(src)
+    # La linea base nativa es solo una referencia y no va en la tabla
     df = df[df["config"] != "linea_base_nativa"]
+    # Promedia las metricas sobre las semillas
     agg = (df.groupby(["detector", "metric"])[["MCC", "BACC", "F1", "Recall", "FPR", "FNR"]]
              .mean().reset_index())
     rows = [f"{NAMES.get(r['detector'], r['detector'])} & {METRIC_ES.get(r['metric'], r['metric'])} & "
@@ -89,6 +96,7 @@ def table_performance(cfg, path: Path) -> None:
                           cols, header, "\n".join(rows)), encoding="utf-8")
 
 
+# Tabla de costo en la Raspberry: latencia, CPU y RAM
 def table_hardware(cfg, path: Path) -> None:
     src = results_dir(cfg) / "edge_benchmark.csv"
     header = ("\\textbf{Detector} & \\textbf{Criterio} & \\textbf{$t$ med.} & "
@@ -106,7 +114,8 @@ def table_hardware(cfg, path: Path) -> None:
     if sel.exists() and all(k in df.columns for k in keys):   # solo las configuraciones elegidas
         df = df.merge(pd.read_csv(sel)[keys], on=keys, how="inner")
     elif sel.exists():
-        print("AVISO: edge_benchmark.csv es de una version anterior; vuelva a correr edge_benchmark.py")
+        print("AVISO: edge_benchmark.csv es de una version anterior; vuelva a correr 4_edge_benchmark.py")
+    # Promedia las mediciones por detector y criterio
     agg = (df.groupby(["detector", "metric"])
              [["latency_median_ms", "latency_p95_ms", "cpu_util_at_rate", "ram_peak_mb"]]
              .mean().reset_index())
@@ -116,6 +125,7 @@ def table_hardware(cfg, path: Path) -> None:
     path.write_text(_wrap(cap, "tab:mock_hardware", cols, header, "\n".join(rows)), encoding="utf-8")
 
 
+# Tabla de resumen: mejor criterio de cada detector contra la linea base
 def table_balance(cfg, path: Path) -> None:
     src = results_dir(cfg) / "balance.csv"
     header = ("\\textbf{Detector} & \\textbf{Mejor criterio} & \\textbf{MCC base} & "
@@ -123,7 +133,7 @@ def table_balance(cfg, path: Path) -> None:
     cols = "llccc"
     cap = "Equilibrio deteccion/costo: mejor criterio por detector frente a la linea base."
     if not src.exists():
-        path.write_text(_wrap(cap + " Requiere ejecutar evaluate.py.", "tab:mock_balance", cols,
+        path.write_text(_wrap(cap + " Requiere ejecutar 5_evaluate.py.", "tab:mock_balance", cols,
                               header, _pending_rows(cfg, 4, with_metric=False), pending=True),
                         encoding="utf-8")
         return
@@ -135,6 +145,7 @@ def table_balance(cfg, path: Path) -> None:
     path.write_text(_wrap(cap, "tab:mock_balance", cols, header, "\n".join(rows)), encoding="utf-8")
 
 
+# Genera las tres tablas e indica si cada una tiene datos o sigue pendiente
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", default=None)

@@ -1,0 +1,357 @@
+environment_current: high_performance
+classifiers:
+  AdaBoost:
+  DecisionTree:
+  EllipticEnvelope:
+    random_state: 42
+  GaussianMixtureModel:
+  GradientBoosting:
+  IsolationForest:
+    random_state: 42
+  KMeans:
+  KNearestNeighbors:
+  LocalOutlierFactor:
+      novelty: True
+  LogisticRegression:
+  MultilayerPerceptron:
+  NaiveBayes:
+  One-classSVM:
+  RandomForest:
+  SVM:
+  XGBoost:
+data_type:
+- subset_10_percent
+- complete
+clf_supervised:
+- NaiveBayes
+- RandomForest
+- LogisticRegression
+- DecisionTree
+- KNearestNeighbors
+- AdaBoost
+- XGBoost
+- GradientBoosting
+- MultilayerPerceptron
+- SVM
+clf_unsupervised:
+- KMeans
+- One-classSVM
+- IsolationForest
+- EllipticEnvelope
+- LocalOutlierFactor
+- GaussianMixtureModel
+environments:
+  google_colab:
+    RESULTS: /content/drive/My Drive/Doctorado/RESULTS
+    ROOT: /content/drive/My Drive/Doctorado
+    CONFIG_ROOT: /content/drive/My Drive/Mis_proyectos/preprocessor
+    CHUNKSIZE: 500000
+    NTRIALS: 50
+    metric:
+    - accuracy
+    - f1-score
+    - mcc
+    - balanced-accuracy
+    - manual-balanced-accuracy
+    - gmean
+    - kappa
+    - manual-kappa
+    - aucroc
+    - aucpr
+    - fbeta
+    - fbetahalf
+    - fbetatwice
+    optimization_method:
+    - TPE
+    - RandomSearch
+    - CMAES
+#    - GridSearch
+    - NSGAII
+    classifiers:
+    - NaiveBayes
+    - RandomForest
+    - LogisticRegression
+    - DecisionTree
+    - KNearestNeighbors
+    - AdaBoost
+    - XGBoost
+    - GradientBoosting
+    - MultilayerPerceptron
+    - SVM
+    - KMeans
+    - One-classSVM
+    - IsolationForest
+    - EllipticEnvelope
+    - LocalOutlierFactor
+    - GaussianMixtureModel
+    datasets_to_process:
+    - IoTID20
+    - N-baiot
+    - Bot-IoT
+    - Bot-IoT-full
+    - DS2OS
+    - Ton-IoT
+    - IOT23
+    - IOT23-10percent
+    - CICIoTDataset2023
+    sampling_methods:
+    - none
+    - SMOTE
+    selector_datasets:
+    - none
+    - chi2
+    - f_classif
+    - mutual_info_classif
+    - mutual_info_regression
+  high_performance:
+    RESULTS: "C:/Users/belen/Desktop/tesis_hpo_edge/RESULTS"
+    ROOT: "C:/Users/belen/Desktop/tesis_hpo_edge"
+    CHUNKSIZE: 500000
+    NTRIALS: 50
+    NUM_FEATURES: 40
+    merge_tolerance_seconds: 300 # Tiempo en segundos para unir flujos cercanos
+    use_temporal_matching: false
+    metric:
+    - accuracy
+    - f1-score
+    - mcc
+    - balanced-accuracy
+    - manual-balanced-accuracy
+    - gmean
+    - kappa
+    - manual-kappa
+    - aucroc
+    - aucpr
+    - fbeta
+    - fbetahalf
+    - fbetatwice
+    optimization_method:
+    - TPE
+    - RandomSearch
+    - CMAES
+#    - GridSearch
+    - NSGAII
+    classifiers:
+    - NaiveBayes
+    - RandomForest
+    - LogisticRegression
+    - DecisionTree
+    - KNearestNeighbors
+    - AdaBoost
+    - XGBoost
+    - GradientBoosting
+    - MultilayerPerceptron
+    - SVM
+    - KMeans
+    - One-classSVM
+    - IsolationForest
+    - EllipticEnvelope
+    - LocalOutlierFactor
+    - GaussianMixtureModel
+    datasets_to_process:
+    - IoTID20
+    - N-baiot
+    - Bot-IoT
+    - IoTID20-NFStream
+    #- Bot-IoT-full
+    #- DS2OS
+    - Ton-IoT
+    #- IOT23
+    #- IOT23-10percent
+    - CICIoTDataset2023
+    sampling_methods:
+    - none
+    - SMOTE
+    selector_datasets:
+    - none
+    - chi2
+    - f_classif
+    - mutual_info_classif
+    - mutual_info_regression
+  low_performance:
+    metric:
+    - f1-score
+    - mcc
+    optimization_method:
+    - TPE
+    classifiers:
+    - KMeans
+    - One-classSVM
+    - IsolationForest
+    - EllipticEnvelope
+    - LocalOutlierFactor
+    - GaussianMixtureModel
+    datasets_to_process:
+    - IoTID20
+    - N-baiot
+    - Bot-IoT
+    - Bot-IoT-full
+    - DS2OS
+    - Ton-IoT
+    sampling_methods:
+    - none
+    selector_datasets:
+    - none
+    - mutual_info_regression
+features_selectors:
+- none
+- chi2
+- f_classif
+- mutual_info_classif
+- mutual_info_regression
+selector_datasets:
+  chi2:
+  - dataset: IoTID20
+    type: subset_10_percent
+  - dataset: N-baiot
+    type: subset_10_percent
+  - dataset: Bot-IoT
+    type: subset_10_percent
+  - dataset: Bot-IoT-full
+    type: subset_10_percent
+  - dataset: DS2OS
+    type: subset_10_percent
+  - dataset: Ton-IoT
+    type: subset_10_percent
+  - dataset: CICIoTDataset2023
+    type: subset_10_percent
+  complete:
+  - dataset: IoTID20
+    type: complete
+  - dataset: N-baiot
+    type: complete
+  - dataset: Bot-IoT
+    type: complete
+  - dataset: Bot-IoT-full
+    type: complete
+  - dataset: DS2OS
+    type: complete
+  - dataset: Ton-IoT
+    type: complete
+  - dataset: CICIoTDataset2023
+    type: complete
+  f_classif:
+  - dataset: IoTID20
+    type: subset_10_percent
+  - dataset: N-baiot
+    type: subset_10_percent
+  - dataset: Bot-IoT
+    type: subset_10_percent
+  - dataset: Bot-IoT-full
+    type: subset_10_percent
+  - dataset: DS2OS
+    type: subset_10_percent
+  - dataset: Ton-IoT
+    type: subset_10_percent
+  - dataset: CICIoTDataset2023
+    type: subset_10_percent
+  mutual_info_classif:
+  - dataset: IoTID20
+    type: subset_10_percent
+  - dataset: N-baiot
+    type: subset_10_percent
+  - dataset: Bot-IoT
+    type: subset_10_percent
+  - dataset: Bot-IoT-full
+    type: subset_10_percent
+  - dataset: DS2OS
+    type: subset_10_percent
+  - dataset: Ton-IoT
+    type: subset_10_percent
+  - dataset: CICIoTDataset2023
+    type: subset_10_percent    
+  mutual_info_regression:
+  - dataset: IoTID20
+    type: subset_10_percent
+  - dataset: N-baiot
+    type: subset_10_percent
+  - dataset: Bot-IoT
+    type: subset_10_percent
+  - dataset: Bot-IoT-full
+    type: subset_10_percent
+  - dataset: DS2OS
+    type: subset_10_percent
+  - dataset: Ton-IoT
+    type: subset_10_percent
+  - dataset: CICIoTDataset2023
+    type: subset_10_percent    
+  none:
+  - dataset: IoTID20
+    type: subset_10_percent
+  - dataset: N-baiot
+    type: subset_10_percent
+  - dataset: Bot-IoT
+    type: subset_10_percent
+  - dataset: Bot-IoT-full
+    type: subset_10_percent
+  - dataset: DS2OS
+    type: subset_10_percent
+  - dataset: Ton-IoT
+    type: subset_10_percent
+  - dataset: CICIoTDataset2023
+    type: subset_10_percent    
+protocol_mapping:
+  # --- Protocolos Fundamentales ---
+  ip: 0
+  hopopt: 0
+  icmp: 1
+  igmp: 2
+  tcp: 6
+  udp: 17
+  ipv6: 41
+
+  # --- Protocolos Comunes ---
+  ggp: 3
+  ipencap: 4
+  st: 5
+  egp: 8
+  igp: 9
+  pup: 12
+  hmp: 20
+  xns-idp: 22
+  rdp: 27
+  iso-tp4: 29
+  dccp: 33
+  xtp: 36
+  ddp: 37
+  idpr-cmtp: 38
+  idrp: 45
+  rsvp: 46
+  gre: 47
+  skip: 57
+  rspf: 73
+  vmtp: 81
+  eigrp: 88
+  ospf: 89
+  ax25: 93
+  ipip: 94
+  etherip: 97
+  encap: 98
+  pim: 103
+  ipcomp: 108
+  vrrp: 112
+  l2tp: 115
+  isis: 124
+  sctp: 132
+  fc: 133
+  udplite: 136
+  mpls-in-ip: 137
+  manet: 138
+  hip: 139
+  shim6: 140
+  wesp: 141
+  rohc: 142
+  ethernet: 143
+  mptcp: 262 # Usado por el Kernel de Linux
+
+  # --- Protocolos de IPv6 y Seguridad (IPSec) ---
+  ipv6-route: 43
+  ipv6-frag: 44
+  esp: 50
+  ah: 51
+  ipv6-icmp: 58
+  ipv6-nonxt: 59
+  ipv6-opts: 60
+  mobility-header: 135
+  arp: 2054   # Añade estos
+  rarp: 2055  # El número puede ser el que estimes conveniente

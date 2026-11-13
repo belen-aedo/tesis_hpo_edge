@@ -1,5 +1,5 @@
 """
-optimize.py - Etapa 2: busqueda de hiperparametros con Optuna (TPE, un solo objetivo).
+3_optimize.py - Etapa 2: busqueda de hiperparametros con Optuna (TPE, un solo objetivo).
 
   * Escenarios no supervisados (silhouette, davies_bouldin, reconstruction,
     stability, consistency): solo usan train y val (trafico normal, sin
@@ -13,7 +13,7 @@ optimize.py - Etapa 2: busqueda de hiperparametros con Optuna (TPE, un solo obje
 Limites del borde (obligatorios): un trial se descarta si la latencia por muestra
 (pasando de a una muestra) en el PC supera max_latency_ms / dev_slowdown_factor,
 o si el modelo pesa mas de max_model_kb. La medicion que vale es la de la
-Raspberry Pi (edge_benchmark.py).
+Raspberry Pi (4_edge_benchmark.py).
 
 Salidas
   outputs/optuna/<detector>_<metrica>_seed<s>.json   (incluye el top-k)
@@ -22,9 +22,9 @@ Salidas
   outputs/models/env.json                             (versiones de las librerias)
 
 USO
-  python src/optimize.py --all                     # corrida completa (segun la config)
-  python src/optimize.py --all --fast              # 25 trials, 1 semilla
-  python src/optimize.py --detector lof --metric silhouette --trials 50
+  python src/3_optimize.py --all                     # corrida completa (segun la config)
+  python src/3_optimize.py --all --fast              # 25 trials, 1 semilla
+  python src/3_optimize.py --detector lof --metric silhouette --trials 50
 """
 
 from __future__ import annotations
@@ -55,6 +55,7 @@ def oracle_score(y, pred, prevalence=None) -> float:
     (calculado desde TPR y FPR). Asi, un test con muchos ataques no premia marcar
     casi todo como ataque."""
     from sklearn.metrics import confusion_matrix, matthews_corrcoef
+    # Sin prevalencia: MCC normal. Con prevalencia: MCC ajustado desde TPR y FPR.
     if prevalence is None:
         return float(matthews_corrcoef(y, pred))
     tn, fp, fn, tp = confusion_matrix(y, pred, labels=[0, 1]).ravel()
@@ -65,9 +66,11 @@ def measure_latency_ms(det, X: np.ndarray, n: int) -> float:
     """Mediana de la latencia por muestra, pasando de a una muestra (como llegaria
     un flujo real)."""
     n = min(n, len(X))
+    # Calentamiento: las primeras predicciones pueden ser mas lentas y no se cuentan
     for i in range(min(3, n)):                      
         det.scores(X[i:i + 1])
     t = np.empty(n)
+    # Mide cada prediccion por separado
     for i in range(n):
         t0 = time.perf_counter_ns()
         det.scores(X[i:i + 1])
@@ -84,6 +87,7 @@ def _run_trials(objective, direction: str, seed: int, n_trials: int):
     try:
         import optuna
     except ImportError:
+        # Sin Optuna el programa se detiene, salvo en las pruebas, que usan busqueda aleatoria
         if os.environ.get("ALLOW_RANDOM_FALLBACK") != "1":
             raise SystemExit("Falta optuna: pip install optuna")
         print("  [!] Optuna no instalado: BUSQUEDA ALEATORIA (solo prueba de humo)")
@@ -99,21 +103,26 @@ def _run_trials(objective, direction: str, seed: int, n_trials: int):
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
+    # Un trial que no cumple los limites queda marcado como descartado en Optuna
     def wrapped(trial):
         try:
             return objective(trial)
         except PrunedTrial:
             raise optuna.TrialPruned()
 
+    # TPE propone configuraciones segun los trials anteriores. NopPruner = sin poda temprana.
     study = optuna.create_study(direction=direction,
                                 sampler=optuna.samplers.TPESampler(seed=seed),
                                 pruner=optuna.pruners.NopPruner())
+    # catch: si un trial falla, la busqueda sigue con el siguiente
     study.optimize(wrapped, n_trials=n_trials, catch=(Exception,))
+    # Se conservan solo los trials que terminaron con un valor
     done = [{"value": t.value, "params": dict(t.params), "user_attrs": dict(t.user_attrs)}
             for t in study.trials if t.value is not None]
     return done, len(study.trials) - len(done)
 
 
+# Completa los hiperparametros con la semilla y, en el autoencoder, con el backend
 def _fit_params(detector_name: str, p: dict, seed: int, cfg) -> dict:
     p = dict(p)
     if detector_name in ("iforest", "autoencoder"):
@@ -123,40 +132,50 @@ def _fit_params(detector_name: str, p: dict, seed: int, cfg) -> dict:
     return p
 
 
+# Hace una busqueda completa para un detector, un criterio y una semilla.
+# Guarda los mejores modelos y devuelve un resumen.
 def run_study(cfg, detector_name: str, metric: str, seed: int, n_trials: int, data: dict) -> dict:
     set_seeds(seed)
     opt, edge, th = cfg["optimization"], cfg["edge"], cfg["threshold"]
     Detector = DETECTORS[detector_name]
     direction = DIRECTION[metric]
     is_oracle = metric.startswith("oracle")
+    # Limite de latencia en el PC: el limite de la Pi dividido por cuanto mas lenta se supone
     budget = float(edge["max_latency_ms"]) / float(edge["dev_slowdown_factor"])
     max_kb = float(edge["max_model_kb"])
+    # Datos: train para entrenar, calibracion para el umbral, objetivo para el criterio
     X_tr = train_for(cfg, detector_name, data["train"])
     X_cal, X_obj = data["calib"], subsample(data["obj"], opt.get("max_val_rows"))
     q_fixed = float(th["q"])
 
+    # Lo que se ejecuta en cada trial: probar una configuracion y darle un valor
     def objective(trial):
+        # 1. Se proponen los hiperparametros (q solo se busca en oracle_q)
         params = suggest_params(trial, detector_name, seed, cfg)
         q = (trial.suggest_float("q", *th["oracle_q_range"]) if metric == "oracle_q" else q_fixed)
         params = _fit_params(detector_name, params, seed, cfg)
+        # 2. Entrena con train y fija el umbral con calibracion. Si falla, se descarta el trial.
         try:
             det = Detector(**params).fit(X_tr)
             det.set_threshold(X_cal, q)
         except Exception as exc:
             trial.set_user_attr("error", str(exc)[:200])
             raise PrunedTrial()
+        # 3. Mide latencia y tamano. Si no cumple los limites, se descarta el trial.
         lat, kb = measure_latency_ms(det, X_obj, int(opt["latency_samples"])), model_size_kb(det)
         trial.set_user_attr("latency_ms", lat)
         trial.set_user_attr("model_kb", kb)
         if lat > budget or kb > max_kb:
             trial.set_user_attr("pruned_reason", "latency" if lat > budget else "model_size")
             raise PrunedTrial()
+        # 4. Calcula el valor: el oraculo usa etiquetas de test_oracle; los demas, solo el bloque objetivo
         if is_oracle:
             value = oracle_score(data["y_orc"], det.predict_outliers(data["X_orc"]),
                                  opt.get("oracle_prevalence"))
         else:
             value = compute_objective(metric, det, X_obj, cfg,
                                       ctx={"Detector": Detector, "params": params, "X_train": X_tr})
+        # Si el valor no es un numero valido, se usa la penalizacion
         return float(value) if np.isfinite(value) else penalty_for(metric)
 
     t0 = time.perf_counter()
@@ -166,11 +185,13 @@ def run_study(cfg, detector_name: str, metric: str, seed: int, n_trials: int, da
         raise SystemExit(f"Ningun trial completo para {detector_name}/{metric}: revise "
                          "edge.max_latency_ms / dev_slowdown_factor o el espacio de busqueda.")
 
+    # Ordena de mejor a peor y se queda con los top_k
     done.sort(key=lambda t: t["value"], reverse=(direction == "maximize"))
     top = done[: int(opt["top_k"])]
     mdir = models_dir(cfg)
     mdir.mkdir(parents=True, exist_ok=True)
     entries = []
+    # Vuelve a entrenar cada configuracion del top-k y la guarda en un archivo .pkl
     for rank, t in enumerate(top):
         p = dict(t["params"])
         q = float(p.pop("q", q_fixed))
@@ -197,6 +218,7 @@ def build_baseline(cfg, detector_name: str, seed: int, data: dict) -> list[dict]
     set_seeds(seed)
     Detector = DETECTORS[detector_name]
     X_tr = train_for(cfg, detector_name, data["train"])
+    # Sin hiperparametros propios: cada detector usa sus valores por defecto
     params = _fit_params(detector_name, {}, seed, cfg)
     det = Detector(**params).fit(X_tr).set_threshold(data["calib"], cfg["threshold"]["q"])
     mdir = models_dir(cfg)
@@ -211,6 +233,8 @@ def build_baseline(cfg, detector_name: str, seed: int, data: dict) -> list[dict]
              "model_kb": model_size_kb(det), "file": fname}]
 
 
+# Agrega los modelos a index.json. Si ya habia entradas de la misma combinacion
+# de detector, metrica y semilla, las reemplaza.
 def update_index(cfg, new_entries: list[dict]) -> None:
     path = models_dir(cfg) / "index.json"
     old = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
@@ -222,7 +246,7 @@ def update_index(cfg, new_entries: list[dict]) -> None:
 def write_env(cfg) -> None:
     """Guarda las versiones con que se entrenaron los modelos. La Raspberry necesita
     las mismas versiones de scikit-learn y NumPy para cargar los .pkl
-    (edge_benchmark.py lo revisa)."""
+    (4_edge_benchmark.py lo revisa)."""
     import sklearn
     import scipy
     env = {"python": platform.python_version(), "numpy": np.__version__,
@@ -234,6 +258,7 @@ def write_env(cfg) -> None:
     save_json(env, models_dir(cfg) / "env.json")
 
 
+# Lee las opciones, carga los datos y corre todas las busquedas pedidas
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -251,6 +276,7 @@ def main() -> None:
 
     cfg = load_config(args.config)
     opt = cfg["optimization"]
+    # Las opciones de la linea de comandos tienen prioridad sobre la configuracion
     n_trials = args.trials or (25 if args.fast else opt["n_trials"])
     seeds = args.seeds if args.seeds is not None else ([42] if args.fast else opt["seeds"])
 
@@ -265,12 +291,14 @@ def main() -> None:
         print("autoencoder: " + ("Keras/TensorFlow" if tf_available() else
                                  "scikit-learn (TensorFlow no instalado)"))
 
+    # Arma la lista de combinaciones de detector y criterio
     if args.all:
         combos = [(d, m) for d, ms in cfg["detectors"].items() for m in ms]
     else:
         if not (args.detector and args.metric):
             ap.error("Indique --detector y --metric, o use --all")
         combos = [(args.detector, args.metric)]
+    # test_oracle solo se abre si se va a correr el oraculo
     want_oracle = (args.all and opt["oracle"] and not args.no_oracle) or \
                   any(m.startswith("oracle") for _, m in combos)
     if want_oracle and not args.no_oracle:
@@ -285,6 +313,7 @@ def main() -> None:
     write_env(cfg)
     out_dir = outputs_dir(cfg) / "optuna"
     summaries = []
+    # Una busqueda por cada combinacion y cada semilla
     for detector, metric in combos:
         for seed in seeds:
             tag = f"{detector}_{metric}_seed{seed}"
@@ -296,6 +325,7 @@ def main() -> None:
             print(f"  mejor valor {res['best_value']:.4f} | completos {res['n_completed']} "
                   f"| descartados {res['n_pruned']} | {res['elapsed_s']}s")
 
+    # Entrena tambien los modelos de la linea base
     if args.all and not args.no_baseline:
         base_entries = []
         for detector in cfg["detectors"]:

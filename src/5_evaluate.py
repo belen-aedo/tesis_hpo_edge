@@ -1,13 +1,13 @@
 """
-evaluate.py - Etapa 4: evaluacion final sobre test_final.
+5_evaluate.py - Etapa 4: evaluacion final sobre test_final.
 
 Es el unico script que puede abrir test_final y sus etiquetas. Se corre una vez,
 cuando las configuraciones ya estan elegidas. Antes de abrir el archivo revisa
-que su hash (SHA-256) coincida con el que guardo prepare_splits.py.
+que su hash (SHA-256) coincida con el que guardo 1_prepare_splits.py.
 
 Como se elige la configuracion (sin etiquetas)
 ----------------------------------------------
-Para cada combinacion de detector, metrica y semilla, optimize.py deja las k
+Para cada combinacion de detector, metrica y semilla, 3_optimize.py deja las k
 mejores configuraciones, ordenadas segun su propia funcion objetivo. Aqui se toma
 la primera que cumple los limites del borde medidos en la Raspberry (latencia,
 CPU y RAM; ver edge_benchmark.csv). El MCC no se usa para elegir, solo se
@@ -45,6 +45,7 @@ from common import (load_config, load_labeled, models_dir, ranking_metrics, resu
 EDGE_COLS = {"detector", "metric", "seed", "rank", "cumple_latencia", "cumple_cpu", "cumple_ram"}
 
 
+# Comprueba con el hash que los bloques de prueba no hayan cambiado
 def verify_integrity(cfg) -> None:
     mp = splits_dir(cfg) / "manifest.json"
     if not mp.exists():
@@ -55,19 +56,22 @@ def verify_integrity(cfg) -> None:
         exp = man.get("sha256", {}).get(name)
         if exp and exp != sha256_of(split_path(cfg, name)):
             raise SystemExit(f"El hash de {name} NO coincide con el manifiesto: el bloque fue "
-                             "modificado; resultados no validos. Repita prepare_splits.py.")
+                             "modificado; resultados no validos. Repita 1_prepare_splits.py.")
     print("Integridad de los bloques de prueba verificada (SHA-256).")
 
 
 def select_entries(index: list[dict], edge: pd.DataFrame | None) -> list[dict]:
     """Elige un modelo por cada (detector, metrica, semilla), sin mirar etiquetas."""
+    # Agrupa los modelos por detector, metrica y semilla
     groups = defaultdict(list)
     for e in index:
         groups[(e["detector"], e["metric"], e["seed"])].append(e)
     chosen = []
     for key, items in sorted(groups.items()):
+        # Parte con el modelo de mejor rango; es el que se usa si no hay mediciones del borde
         items.sort(key=lambda e: e["rank"])
         pick, feasible = items[0], None
+        # Con mediciones del borde, toma el primero que cumple latencia, CPU y RAM
         if edge is not None and key[1] != "por_defecto":
             feasible = False
             for e in items:
@@ -80,6 +84,7 @@ def select_entries(index: list[dict], edge: pd.DataFrame | None) -> list[dict]:
     return chosen
 
 
+# Carga un modelo y calcula sus metricas en test_final
 def evaluate_entry(entry, mdir, X, y, cfg):
     with open(mdir / entry["file"], "rb") as fh:
         det = pickle.load(fh)
@@ -87,6 +92,7 @@ def evaluate_entry(entry, mdir, X, y, cfg):
     pred = (s > det.threshold_).astype(int)
     row = supervised_metrics(y, pred, cfg["split"]["report_prevalences"])
     row.update(ranking_metrics(y, s))
+    # Repite el MCC, FPR y recall con otros umbrales. Solo se reporta, no se usa para elegir.
     for q in cfg["threshold"]["sensitivity_q"]:
         m = supervised_metrics(y, (s > det.threshold_for(q)).astype(int))
         tag = f"q{q * 100:g}"
@@ -94,6 +100,7 @@ def evaluate_entry(entry, mdir, X, y, cfg):
     return row, det, pred
 
 
+# Compara cada criterio con la linea base y con el oraculo, y revisa la hipotesis
 def summarize(df: pd.DataFrame, cfg) -> list[dict]:
     out = results_dir(cfg)
     base = df[df.config == "linea_base"].set_index(["detector", "seed"])
@@ -105,8 +112,10 @@ def summarize(df: pd.DataFrame, cfg) -> list[dict]:
             seeds = [s for s in g.index if (det_name, s) in base.index]
             if not seeds:
                 continue
+            # Diferencia de MCC con la linea base, semilla por semilla
             d = np.array([g.loc[s, "MCC"] - base.loc[(det_name, s), "MCC"] for s in seeds])
             n = len(d)
+            # Error estandar de esa diferencia (con 1 semilla no se puede calcular)
             se = d.std(ddof=1) / np.sqrt(n) if n > 1 else float("nan")
             detail.append({"detector": det_name, "metric": metric, "config": g.config.iloc[0],
                            "n_semillas": n, "mcc_medio": g.loc[seeds, "MCC"].mean(),
@@ -127,16 +136,21 @@ def summarize(df: pd.DataFrame, cfg) -> list[dict]:
         un = g[g.config == "optimizada"]
         if un.empty:
             continue
+        # Ordena los criterios por MCC en test_final para nombrar al mejor.
+        # Ojo: esto usa etiquetas de prueba. Es una comparacion para reportar; no sirve como
+        # forma de elegir el criterio sin etiquetas.
         ranked = un.sort_values("mcc_medio", ascending=False)
         best = ranked.iloc[0]
         orc = g[g.metric == "oracle"]
         orc_q = g[g.metric == "oracle_q"]
+        # Solo se habla de 'mejora' o 'empeora' si el delta supera 2 errores estandar
         se2 = 2 * best.delta_se if np.isfinite(best.delta_se) else 0.0
         if int(best.n_semillas) < 2:      # con 1 semilla no hay error estandar, asi que no se puede concluir
             estado = "sin evidencia (1 semilla)"
         else:
             estado = ("mejora" if best.delta_mcc - se2 > 0 else
                       "empeora" if best.delta_mcc + se2 < 0 else "mantiene")
+        # Compara el mejor criterio con el segundo y con la dispersion entre semillas
         runner = ranked.iloc[1] if len(ranked) > 1 else None
         margin = float(best.mcc_medio - runner.mcc_medio) if runner is not None else float("nan")
         pooled = float(np.nanmean([best.mcc_std, runner.mcc_std])) if runner is not None else float("nan")
@@ -155,6 +169,7 @@ def summarize(df: pd.DataFrame, cfg) -> list[dict]:
     if balance:
         pd.DataFrame(balance).to_csv(out / "balance.csv", index=False)
         winners = {d: v["mejor_metrica"] for d, v in hyp.items()}
+        # La hipotesis se da por soportada solo si se cumplen las 3 condiciones
         soportada = (all(v["estado_vs_base"] != "empeora" for v in hyp.values())
                      and len(set(winners.values())) > 1
                      and all(v["separable"] for v in hyp.values()))
@@ -196,6 +211,8 @@ def pareto_front(cfg, df: pd.DataFrame, edge: pd.DataFrame | None) -> None:
     d["en_frente"] = False
     for _, g in d.groupby("detector"):
         for i, r in g.iterrows():
+            # Una configuracion sale del frente si otra es igual o mejor en MCC y latencia,
+            # y estrictamente mejor en al menos una de las dos
             mejor_o_igual = (g.MCC >= r.MCC) & (g.latencia_ms <= r.latencia_ms)
             estricto = (g.MCC > r.MCC) | (g.latencia_ms < r.latencia_ms)
             d.loc[i, "en_frente"] = not bool((mejor_o_igual & estricto).any())
@@ -207,6 +224,7 @@ def pareto_front(cfg, df: pd.DataFrame, edge: pd.DataFrame | None) -> None:
           f"{int(d.en_frente.sum())} de {len(d)} configuraciones no dominadas.")
 
 
+# Escribe resumen.md con la tabla de resultados
 def write_summary(cfg, balance: list[dict], df: pd.DataFrame, y_te) -> None:
     lines = ["# Resumen de la evaluacion final", "",
              f"test_final: {len(y_te):,} flujos, {y_te.mean():.1%} ataques.", "",
@@ -222,6 +240,7 @@ def write_summary(cfg, balance: list[dict], df: pd.DataFrame, y_te) -> None:
     (results_dir(cfg) / "resumen.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+# Revisa los bloques, elige los modelos, los evalua en test_final y guarda los resultados
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -238,17 +257,19 @@ def main() -> None:
     mdir = models_dir(cfg)
     index = json.loads((mdir / "index.json").read_text(encoding="utf-8"))
     edge_path = results_dir(cfg) / "edge_benchmark.csv"
+    # Las mediciones del borde son opcionales; sin ellas se usa el modelo de rango 0
     edge = pd.read_csv(edge_path) if edge_path.exists() else None
     if edge is not None and not EDGE_COLS.issubset(edge.columns):
         print("AVISO: edge_benchmark.csv es de una version anterior (faltan columnas "
               f"{sorted(EDGE_COLS - set(edge.columns))}). Se ignora: borre outputs/results/"
-              "edge_benchmark.csv y vuelva a correr edge_benchmark.py.")
+              "edge_benchmark.csv y vuelva a correr 4_edge_benchmark.py.")
         edge = None
     if edge is None:
         print("AVISO: no hay edge_benchmark.csv valido; se usa la config de rango 0 (sin filtro de borde).")
     elif "platform" in edge and not edge["platform"].astype(str).str.contains("Raspberry").any():
         print("AVISO: edge_benchmark.csv NO fue medido en una Raspberry Pi.")
 
+    # La eleccion se hace sin mirar las etiquetas
     chosen = select_entries(index, edge)
     rows, per_type = [], []
     for e in chosen:
@@ -283,6 +304,7 @@ def main() -> None:
                                        ).agg(n=("n", "first"), recall=("recall", "mean")
                                              ).reset_index().to_csv(out / "recall_por_ataque.csv",
                                                                     index=False)
+    # Calcula los resumenes y escribe los archivos finales
     balance = summarize(df, cfg)
     pareto_front(cfg, df, edge)
     write_summary(cfg, balance, df, y_te)

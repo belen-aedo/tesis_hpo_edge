@@ -20,10 +20,23 @@ tesis_hpo_edge/
 │   │                        <- aquí va Train_Test_Network.csv (ver el LEEME.txt de esa carpeta)
 │   └── Parquet/             <- aquí escribe el preprocessor (train/test_*.parquet)
 ├── config/experiment.yaml   <- toda la configuración, con comentarios
-├── src/                     <- el código del experimento
-├── scripts/                 <- configurar_preprocessor.py y check_env.py
+├── scripts/                 <- paso 0: preparar el entorno
+│   ├── 0_check_env.py               revisa las librerías instaladas
+│   └── 0_configurar_preprocessor.py apunta el preprocessor a esta carpeta
+├── src/                     <- el código del experimento, numerado en orden de ejecución
+│   ├── 1_prepare_splits.py   bloques train / val / test_oracle / test_final
+│   ├── 2_diagnose.py         (opcional) ¿las métricas no supervisadas sirven de guía?
+│   ├── 3_optimize.py         Optuna + oráculo + línea base
+│   ├── 4_edge_benchmark.py   latencia, CPU y RAM (en la Raspberry Pi)
+│   ├── 5_evaluate.py         evaluación final en test_final
+│   ├── 6_report.py           tablas LaTeX
+│   ├── common.py             } módulos de apoyo: los importan los scripts
+│   ├── detectors.py          } numerados. No llevan número porque Python
+│   ├── objectives.py         } no permite importar un archivo cuyo nombre
+│   └── search_space.py       } empieza con un dígito.
 ├── tests/                   <- prueba rápida con datos sintéticos
-├── data/splits/             <- bloques train / val / test (los crea prepare_splits.py)
+├── cuaderno_funciones.ipynb <- explicación de cada función, con ejemplos ejecutables
+├── data/splits/             <- bloques train / val / test (los crea 1_prepare_splits.py)
 ├── outputs/                 <- modelos, estudios de Optuna, resultados y tablas LaTeX
 ├── run_all.py               <- corre las etapas en orden
 ├── requirements.txt         <- librerías para el PC
@@ -38,17 +51,17 @@ La carpeta tiene que estar en una ruta **sin tildes ni espacios** (ejemplo:
 | Etapa                       | Script        | ¿Usa etiquetas? |
 |-----------------------------|---------------|------------------|
 | Preprocesar (profesor)      | pasos 00–03   | su `train` mezcla tráfico normal y ataques |
-| Bloques                     | `prepare_splits.py` | solo para separar lo normal de los ataques; **train y val tienen solo tráfico normal** |
-| Selección de variables y escalado | `prepare_splits.py` | **no**: usa solo el train normal |
-| Optimización no supervisada | `optimize.py` | **no** (ni siquiera abre los `test_*`) |
-| Oráculo (cota superior)     | `optimize.py` | sí, pero solo de `test_oracle` |
-| Medición en el borde        | `edge_benchmark.py` | no |
-| Elección del modelo         | `evaluate.py` | **no**: toma el primer modelo del top-k que cumple los límites del borde; el MCC no se usa para elegir |
-| Evaluación final            | `evaluate.py` | sí, de `test_final`, una sola vez (antes revisa su hash SHA-256) |
+| Bloques                     | `1_prepare_splits.py` | solo para separar lo normal de los ataques; **train y val tienen solo tráfico normal** |
+| Selección de variables y escalado | `1_prepare_splits.py` | **no**: usa solo el train normal |
+| Optimización no supervisada | `3_optimize.py` | **no** (ni siquiera abre los `test_*`) |
+| Oráculo (cota superior)     | `3_optimize.py` | sí, pero solo de `test_oracle` |
+| Medición en el borde        | `4_edge_benchmark.py` | no |
+| Elección del modelo         | `5_evaluate.py` | **no**: toma el primer modelo del top-k que cumple los límites del borde; el MCC no se usa para elegir |
+| Evaluación final            | `5_evaluate.py` | sí, de `test_final`, una sola vez (antes revisa su hash SHA-256) |
 
 Los 3 bloques del diagrama aprobado son **train** (normal), **val** (normal) y **test**
 (normal + ataques). El test se divide en `test_oracle` (lo usa solo el oráculo) y `test_final`
-(lo usa solo `evaluate.py`), manteniendo la proporción de cada tipo de ataque.
+(lo usa solo `5_evaluate.py`), manteniendo la proporción de cada tipo de ataque.
 
 - `train` y `val` salen del **tráfico normal del train del preprocessor** (sus ataques se descartan).
 - `test` es **el test completo del preprocessor**. Así, los ataques de prueba nunca se usaron
@@ -66,7 +79,7 @@ cd C:\Users\belen\Desktop\tesis_hpo_edge
 py -3.10 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python scripts\check_env.py
+python scripts\0_check_env.py
 ```
 
 `tensorflow` es opcional: si está instalado, el autoencoder se entrena con Keras; si no, con
@@ -82,7 +95,7 @@ scikit-learn. `lightgbm` y `statsmodels` solo hacen falta si usas `features.mode
    `preprocessor\config.yaml`, etc.
 2. Copia `Train_Test_Network.csv` (TON_IoT, sin modificar) en
    `Datasets\Sources\TON-IoT\Train_Test_datasets\Train_Test_Network_dataset\`.
-3. Corre `python scripts\configurar_preprocessor.py`. Este script deja el `config.yaml` y el
+3. Corre `python scripts\0_configurar_preprocessor.py`. Este script deja el `config.yaml` y el
    `config.json` del profesor apuntando a esta carpeta y guarda copias `.bak_proyecto` (el
    porqué está en la sección 8).
 
@@ -109,8 +122,8 @@ Copia a la Pi: `src/`, `config/`, `scripts/`, `run_all.py`, `requirements-pi.txt
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-pi.txt          # scikit-learn y numpy: la MISMA versión que en el PC
-python scripts/check_env.py --rol pi
-python src/edge_benchmark.py                # mide la latencia, la CPU y la RAM de cada modelo
+python scripts/0_check_env.py --rol pi
+python src/4_edge_benchmark.py                # mide la latencia, la CPU y la RAM de cada modelo
 ```
 
 Después trae de vuelta al PC `outputs/results/edge_benchmark.csv` y `edge_platform.json`
@@ -153,13 +166,13 @@ python run_all.py --etapas evaluar,reporte
 | Sección | Decisión | Archivo y función | Parámetro (`experiment.yaml`) o constante |
 |---|---|---|---|
 | 3.1.3 | Preprocesador del profesor (pasos 00–03) | `run_all.py` → `etapa_preprocesar` | `input.variant` |
-| 3.2.2 | Selección de variables sin etiquetas | `prepare_splits.py` → `select_unsupervised` | `features.max_features`, `min_minority_freq`, `max_abs_corr`; muestra de 20 000 filas (fija) |
-| 3.2.2 | Estandarización con el train normal | `prepare_splits.py` → `fit_scaler`, `apply_scaler` | `scaling.method`, `scaling.clip` |
-| 3.2.3 | Train/val (85/15 del normal) | `prepare_splits.py` → `main` | `split.val_frac_of_normal`, `split.seed` |
-| 3.2.3 | Test en oráculo/final, estratificado por tipo | `prepare_splits.py` → `stratified_halves` | `split.oracle_frac_of_test` |
+| 3.2.2 | Selección de variables sin etiquetas | `1_prepare_splits.py` → `select_unsupervised` | `features.max_features`, `min_minority_freq`, `max_abs_corr`; muestra de 20 000 filas (fija) |
+| 3.2.2 | Estandarización con el train normal | `1_prepare_splits.py` → `fit_scaler`, `apply_scaler` | `scaling.method`, `scaling.clip` |
+| 3.2.3 | Train/val (85/15 del normal) | `1_prepare_splits.py` → `main` | `split.val_frac_of_normal`, `split.seed` |
+| 3.2.3 | Test en oráculo/final, estratificado por tipo | `1_prepare_splits.py` → `stratified_halves` | `split.oracle_frac_of_test` |
 | 3.2.3 | Val en calibración/objetivo | `common.py` → `split_val` | `threshold.calib_frac` |
 | 3.2.3 | Submuestra de 10 000 filas de train | `common.py` → `train_for`, `subsample` | `optimization.max_train_rows`, `max_train_rows_lof`; semilla 42 (fija) |
-| 3.2.3 / 3.2.11 | Registro de particiones y hash SHA-256 | `prepare_splits.py` → `main` (manifest) | — |
+| 3.2.3 / 3.2.11 | Registro de particiones y hash SHA-256 | `1_prepare_splits.py` → `main` (manifest) | — |
 | 3.2.4 | Detectores y puntajes | `detectors.py` → `IForestDetector`, `LOFDetector`, `AutoencoderDetector` | `autoencoder.backend` |
 | 3.2.4 | Espacios de búsqueda (Tabla 3.5) | `search_space.py` → `suggest_params` | `search_space.iforest_max_samples` |
 | 3.2.5 | Umbral por percentil q | `detectors.py` → `BaseDetector.set_threshold` | `threshold.q`, `threshold.sensitivity_q` |
@@ -167,18 +180,18 @@ python run_all.py --etapas evaluar,reporte
 | 3.2.6 | Error de reconstrucción | `objectives.py` → `objective_reconstruction` | — |
 | 3.2.6 | Estabilidad | `objectives.py` → `objective_stability` | `objectives.stability_replicas`, `stability_noise_sigma`; semilla 42 (fija) |
 | 3.2.6 | Consistencia | `objectives.py` → `objective_consistency` | `optimization.consistency_boot`, `consistency_frac`; semilla 42 (fija) |
-| 3.2.6 | Funciones por detector (Tabla 3.6) | `optimize.py` → `main` | `detectors` |
-| 3.2.7 | Línea base | `optimize.py` → `build_baseline` | valores por defecto en `AutoencoderDetector.__init__` |
-| 3.2.7 | Búsqueda TPE, sin poda temprana | `optimize.py` → `_run_trials` | `optimization.n_trials`, `optimization.seeds` |
-| 3.2.7 | Oráculo (q fijo y q libre) | `optimize.py` → `run_study`, `oracle_score` | `optimization.oracle`, `threshold.oracle_q_range` |
-| 3.2.8 | Etapa 1: límites en el PC | `optimize.py` → `run_study`, `measure_latency_ms` | `edge.max_latency_ms`, `dev_slowdown_factor`, `max_model_kb`, `optimization.latency_samples` |
-| 3.2.8 | Etapa 2: medición en la Raspberry Pi | `edge_benchmark.py` → `worker`, `meets` | `edge.n_inference_runs`, `n_warmup_runs`, `flow_rate_per_s`, `max_cpu_percent`, `max_ram_mb`, `latency_stat`; semilla 42 (fija) |
-| 3.2.8 | Elección de la primera top-k que cumple | `evaluate.py` → `select_entries` | `optimization.top_k` |
-| 3.2.8 | Frente de Pareto MCC/latencia | `evaluate.py` → `pareto_front` | — |
+| 3.2.6 | Funciones por detector (Tabla 3.6) | `3_optimize.py` → `main` | `detectors` |
+| 3.2.7 | Línea base | `3_optimize.py` → `build_baseline` | valores por defecto en `AutoencoderDetector.__init__` |
+| 3.2.7 | Búsqueda TPE, sin poda temprana | `3_optimize.py` → `_run_trials` | `optimization.n_trials`, `optimization.seeds` |
+| 3.2.7 | Oráculo (q fijo y q libre) | `3_optimize.py` → `run_study`, `oracle_score` | `optimization.oracle`, `threshold.oracle_q_range` |
+| 3.2.8 | Etapa 1: límites en el PC | `3_optimize.py` → `run_study`, `measure_latency_ms` | `edge.max_latency_ms`, `dev_slowdown_factor`, `max_model_kb`, `optimization.latency_samples` |
+| 3.2.8 | Etapa 2: medición en la Raspberry Pi | `4_edge_benchmark.py` → `worker`, `meets` | `edge.n_inference_runs`, `n_warmup_runs`, `flow_rate_per_s`, `max_cpu_percent`, `max_ram_mb`, `latency_stat`; semilla 42 (fija) |
+| 3.2.8 | Elección de la primera top-k que cumple | `5_evaluate.py` → `select_entries` | `optimization.top_k` |
+| 3.2.8 | Frente de Pareto MCC/latencia | `5_evaluate.py` → `pareto_front` | — |
 | 3.2.9 | Métricas de detección y MCC_π | `common.py` → `supervised_metrics`, `mcc_from_rates`, `ranking_metrics` | `split.report_prevalences` |
-| 3.2.9 | Δ, error estándar, distancia al oráculo e hipótesis | `evaluate.py` → `summarize` | — |
-| 3.2.10 | Diagnóstico de las funciones objetivo | `diagnose.py` → `main` | `--n 40` |
-| 3.2.11 | Versiones de bibliotecas | `optimize.py` → `write_env` | — |
+| 3.2.9 | Δ, error estándar, distancia al oráculo e hipótesis | `5_evaluate.py` → `summarize` | — |
+| 3.2.10 | Diagnóstico de las funciones objetivo | `2_diagnose.py` → `main` | `--n 40` |
+| 3.2.11 | Versiones de bibliotecas | `3_optimize.py` → `write_env` | — |
 | 3.2.11 | Pruebas anti-fuga (datos sintéticos) | `tests/smoke_test.py` | — |
 
 ## 7. Limitaciones 

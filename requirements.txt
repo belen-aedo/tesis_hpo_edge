@@ -12,3 +12,7 @@ pyarrow>=14          # lectura/escritura de Parquet (el preprocessor lo necesita
 # tensorflow>=2.13   # autoencoder con Keras (si no esta, se usa scikit-learn)
 # lightgbm           # solo si features.mode: selector (paso 04 del profesor)
 # statsmodels        # idem (VIF)
+
+# Solo para abrir y ejecutar cuaderno_funciones.ipynb (VS Code / Jupyter)
+ipykernel
+matplotlib           # graficos del cuaderno

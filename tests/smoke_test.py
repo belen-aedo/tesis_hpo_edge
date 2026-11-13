@@ -6,8 +6,8 @@ evaluate -> report) y que NO hay fuga de etiquetas:
   * train y val no tienen etiquetas ni ataques;
   * optimize (escenarios no supervisados) corre con test_oracle y test_final OCULTOS;
   * el oraculo corre con test_final oculto;
-  * si el hash de test_final cambia, evaluate.py se niega a correr;
-  * un edge_benchmark.csv de version anterior no hace caer a evaluate.py.
+  * si el hash de test_final cambia, 5_evaluate.py se niega a correr;
+  * un edge_benchmark.csv de version anterior no hace caer a 5_evaluate.py.
 Si Optuna no esta instalado usa busqueda aleatoria (ALLOW_RANDOM_FALLBACK=1): eso
 valida la logica, NO reemplaza una corrida real con Optuna.
 
@@ -31,10 +31,12 @@ sys.path.insert(0, str(SRC))
 sys.path.insert(0, str(ROOT / "tests"))
 import make_synthetic_toniot as syn   # noqa: E402
 
+# Crea una carpeta temporal con datos sinteticos, para no tocar los datos reales
 tmp = Path(tempfile.mkdtemp(prefix="smoke_"))
 ds_root = tmp / "Datasets"
 syn.write(ds_root)
 
+# Configuracion chica, para que la prueba termine rapido
 cfg = {
     "paths": {"datasets_root": str(ds_root), "splits_dir": str(tmp / "splits"),
               "outputs_dir": str(tmp / "outputs")},
@@ -50,6 +52,7 @@ cfgp.write_text(yaml.safe_dump(cfg))
 env = dict(os.environ, ALLOW_RANDOM_FALLBACK="1")
 
 
+# Ejecuta un script del proyecto. Falla si no termina como se esperaba.
 def run(script, *args, expect_fail=False):
     cmd = [sys.executable, str(SRC / script), "--config", str(cfgp), *args]
     print("\n$ python", script, *args)
@@ -64,6 +67,7 @@ def run(script, *args, expect_fail=False):
     return p
 
 
+# Muestra si una condicion se cumple y detiene la prueba si no
 def check(cond, msg):
     print(("  OK  " if cond else "  MAL ") + msg)
     if not cond:
@@ -71,7 +75,7 @@ def check(cond, msg):
 
 
 # ---- 1) particiones -------------------------------------------------------------
-run("prepare_splits.py")
+run("1_prepare_splits.py")
 sp = tmp / "splits"
 ext = "parquet" if (sp / "train.parquet").exists() else "csv"
 man = json.loads((sp / "manifest.json").read_text())
@@ -97,31 +101,33 @@ hidden = tmp / "hidden"
 hidden.mkdir()
 
 
+# Oculta bloques de datos: si un script los necesitara, fallaria
 def hide(*names):
     for n in names:
         shutil.move(sp / f"{n}.{ext}", hidden / f"{n}.{ext}")
 
 
+# Devuelve a su lugar los bloques ocultos
 def show(*names):
     for n in names:
         shutil.move(hidden / f"{n}.{ext}", sp / f"{n}.{ext}")
 
 
 hide("test_oracle", "test_final")
-run("optimize.py", "--all", "--no-oracle", "--trials", "6", "--seeds", "42", "43")
+run("3_optimize.py", "--all", "--no-oracle", "--trials", "6", "--seeds", "42", "43")
 show("test_oracle")                       # el oraculo solo necesita test_oracle
-run("optimize.py", "--detector", "iforest", "--metric", "oracle", "--trials", "6", "--seeds", "42", "43")
-run("optimize.py", "--detector", "lof", "--metric", "oracle_q", "--trials", "6", "--seeds", "42", "43")
-run("diagnose.py", "--n", "8")
+run("3_optimize.py", "--detector", "iforest", "--metric", "oracle", "--trials", "6", "--seeds", "42", "43")
+run("3_optimize.py", "--detector", "lof", "--metric", "oracle_q", "--trials", "6", "--seeds", "42", "43")
+run("2_diagnose.py", "--n", "8")
 show("test_final")
 print("\n>>> LEAK CHECK OK: optimize no necesito test_final ni (salvo oraculo) test_oracle")
 check((tmp / "outputs" / "models" / "env.json").exists(), "env.json con versiones de librerias")
 
 # ---- 3) borde, evaluacion, reporte --------------------------------------------------
-run("edge_benchmark.py")
+run("4_edge_benchmark.py")
 edge = pd.read_csv(tmp / "outputs" / "results" / "edge_benchmark.csv")
 check({"rank", "cumple_ram", "cumple_cpu", "cumple_latencia"} <= set(edge.columns), "edge_benchmark con esquema nuevo")
-run("evaluate.py")
+run("5_evaluate.py")
 res = tmp / "outputs" / "results"
 for f in ("final_evaluation.csv", "selected_models.csv", "balance.csv", "recall_por_ataque.csv",
           "pareto_mcc_latencia.csv", "hypothesis_check.json", "resumen.md"):
@@ -129,21 +135,24 @@ for f in ("final_evaluation.csv", "selected_models.csv", "balance.csv", "recall_
 fe = pd.read_csv(res / "final_evaluation.csv")
 check({"linea_base", "optimizada", "oraculo", "linea_base_nativa"} <= set(fe.config), "escenarios completos")
 check(fe.loc[fe.config != "linea_base_nativa", "AUROC"].between(0, 1).all(), "AUROC en [0, 1]")
-run("report.py")
+run("6_report.py")
 check("[Pendiente]" not in (tmp / "outputs" / "tables" / "tab_mock_balance.tex").read_text(), "tabla de balance con datos")
 
 # ---- 4) robustez --------------------------------------------------------------------
+# Simula un archivo antiguo y comprueba que 5_evaluate.py lo maneje sin caerse
 old = edge.drop(columns=["rank", "cumple_ram"])
 old.to_csv(res / "edge_benchmark.csv", index=False)               # esquema viejo
-p = run("evaluate.py")
+p = run("5_evaluate.py")
 check("version anterior" in p.stdout, "evaluate ignora un edge_benchmark.csv antiguo sin caerse")
-run("report.py")
+run("6_report.py")
+# Altera test_final (solo en csv) para comprobar que el hash lo detecta
 pd.DataFrame({"x": [1]}).to_csv(sp / f"test_final.csv", index=False) if ext == "csv" else None
 if ext == "csv":
-    p = run("evaluate.py", expect_fail=True)
+    p = run("5_evaluate.py", expect_fail=True)
     check("NO coincide" in (p.stdout + p.stderr), "evaluate rechaza un test_final modificado (hash)")
 
 # ---- 5) modo selector y prevalencia objetivo ------------------------------------------
+# Prueba otra configuracion: columnas del selector y 10 % de ataques
 cfg2 = dict(cfg, features={"mode": "selector", "selector": "vif"},
             split={"test_target_prevalence": 0.10},
             paths=dict(cfg["paths"], splits_dir=str(tmp / "splits2")))
@@ -157,7 +166,7 @@ for part in ("train", "test"):
     src_df[keep].to_csv(d / "best_features.csv", index=False)
 cfgp2 = tmp / "prueba2.yaml"
 cfgp2.write_text(yaml.safe_dump(cfg2))
-p = subprocess.run([sys.executable, str(SRC / "prepare_splits.py"), "--config", str(cfgp2)],
+p = subprocess.run([sys.executable, str(SRC / "1_prepare_splits.py"), "--config", str(cfgp2)],
                    capture_output=True, text=True, cwd=ROOT)
 print(p.stdout[-900:])
 check(p.returncode == 0, "prepare_splits en modo selector")

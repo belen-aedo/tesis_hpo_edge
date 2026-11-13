@@ -11,7 +11,7 @@ paths:
   # Relativa a esta carpeta del proyecto, o absoluta (p. ej. si prefieres seguir
   # usando la de antes:  C:/Users/belen/Desktop/Taller de investigacion/Datasets)
   datasets_root: Datasets
-  splits_dir: data/splits        # bloques train / val / test (los crea prepare_splits.py)
+  splits_dir: data/splits        # bloques train / val / test (los crea 1_prepare_splits.py)
   outputs_dir: outputs           # modelos, estudios Optuna, resultados, tablas
 
 # -------------------------------------------------------------- DATASET ------

@@ -6,7 +6,7 @@ tablas, las semillas, la division de `val` en calibracion y objetivo, y las
 metricas de evaluacion.
 
 Las metricas supervisadas (las que usan etiquetas) solo las llaman el oraculo
-(optimize.py, con test_oracle), diagnose.py y evaluate.py (con test_final).
+(3_optimize.py, con test_oracle), 2_diagnose.py y 5_evaluate.py (con test_final).
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
+# Carpeta raiz del proyecto y ruta de la configuracion principal
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = REPO_ROOT / "config" / "experiment.yaml"
 
@@ -30,6 +31,8 @@ DEFAULT_CONFIG = REPO_ROOT / "config" / "experiment.yaml"
 # --------------------------------------------------------------------------- #
 # Configuracion
 # --------------------------------------------------------------------------- #
+# Mezcla dos configuraciones: los valores de `over` reemplazan a los de `base`.
+# Si un valor es a su vez un diccionario, se mezcla por dentro en vez de reemplazarlo entero.
 def deep_merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
     out = copy.deepcopy(base)
     for k, v in (over or {}).items():
@@ -45,6 +48,7 @@ def load_config(path: str | Path | None = None) -> Dict[str, Any]:
     reemplazan a los del archivo base."""
     with open(DEFAULT_CONFIG, "r", encoding="utf-8") as fh:
         cfg = yaml.safe_load(fh) or {}
+    # Si se indico otro yaml, sus valores se ponen encima de los del archivo base
     if path and Path(path).resolve() != DEFAULT_CONFIG.resolve():
         with open(path, "r", encoding="utf-8") as fh:
             cfg = deep_merge(cfg, yaml.safe_load(fh) or {})
@@ -52,11 +56,13 @@ def load_config(path: str | Path | None = None) -> Dict[str, Any]:
     return cfg
 
 
+# Convierte una ruta en absoluta. Las rutas relativas parten de la raiz del proyecto.
 def _resolve(p: str | Path) -> Path:
     p = Path(os.path.expanduser(str(p)))
     return p if p.is_absolute() else REPO_ROOT / p
 
 
+# Funciones cortas que devuelven las carpetas del proyecto, segun la configuracion
 def datasets_dir(cfg) -> Path:
     return _resolve(cfg["paths"]["datasets_root"])
 
@@ -80,6 +86,7 @@ def results_dir(cfg) -> Path:
 # --------------------------------------------------------------------------- #
 # Entrada / salida
 # --------------------------------------------------------------------------- #
+# Revisa si hay instalada una libreria capaz de leer archivos parquet
 def parquet_available() -> bool:
     for mod in ("pyarrow", "fastparquet"):
         try:
@@ -104,6 +111,7 @@ def find_table(base: Path) -> Path:
     raise FileNotFoundError(f"No se encontro {base}.parquet ni {base}.csv")
 
 
+# Lee una tabla parquet o csv y la devuelve como DataFrame
 def read_table(path) -> pd.DataFrame:
     path = Path(path)
     if not path.exists():
@@ -115,6 +123,7 @@ def read_table(path) -> pd.DataFrame:
     raise ValueError(f"Formato no soportado: {path.suffix}")
 
 
+# Guarda una tabla como parquet o csv, segun su extension. Crea la carpeta si falta.
 def write_table(df: pd.DataFrame, path) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,6 +133,8 @@ def write_table(df: pd.DataFrame, path) -> None:
         df.to_csv(path, index=False)
 
 
+# Calcula la huella SHA-256 de un archivo, leyendolo por partes.
+# Si el archivo cambia, la huella cambia: asi se detecta que un bloque fue modificado.
 def sha256_of(path, block: int = 1 << 20) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -132,6 +143,7 @@ def sha256_of(path, block: int = 1 << 20) -> str:
     return h.hexdigest()
 
 
+# Guarda un objeto de Python en un archivo JSON. Crea la carpeta si falta.
 def save_json(obj: Any, path) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -139,11 +151,13 @@ def save_json(obj: Any, path) -> None:
         json.dump(obj, fh, indent=2, ensure_ascii=False, default=str)
 
 
+# Lee un archivo JSON
 def load_json(path):
     with open(path, "r", encoding="utf-8") as fh:
         return json.load(fh)
 
 
+# Fija las semillas de azar para que los resultados se puedan repetir
 def set_seeds(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -152,9 +166,11 @@ def set_seeds(seed: int) -> None:
 # --------------------------------------------------------------------------- #
 # Particiones
 # --------------------------------------------------------------------------- #
+# Columnas que no son variables de entrada de los modelos
 NON_FEATURE = ("y_true", "attack_type")
 
 
+# Devuelve la ruta del archivo de un bloque (train, val, test_oracle o test_final)
 def split_path(cfg, name: str) -> Path:
     return find_table(splits_dir(cfg) / name)
 
@@ -163,15 +179,17 @@ def load_labeled(cfg, name: str):
     """Devuelve (X, y, tipos de ataque). En train y val, y y los tipos son None,
     porque esos bloques no tienen etiquetas."""
     df = read_table(split_path(cfg, name))
+    # Las etiquetas y los tipos de ataque solo se leen si la columna existe en el bloque
     y = df["y_true"].to_numpy() if "y_true" in df.columns else None
     types = df["attack_type"].astype(str).to_numpy() if "attack_type" in df.columns else None
+    # X contiene solo las variables: se quitan las etiquetas y el tipo de ataque
     X = df.drop(columns=[c for c in NON_FEATURE if c in df.columns]).to_numpy(dtype=np.float32)
     return X, y, types
 
 
 def load_split(cfg, name: str):
     """Devuelve (X, y). Solo traen etiquetas test_oracle (lo usa el oraculo) y
-    test_final (lo usa evaluate.py)."""
+    test_final (lo usa 5_evaluate.py)."""
     X, y, _ = load_labeled(cfg, name)
     return X, y
 
@@ -184,12 +202,15 @@ def split_val(X_val: np.ndarray, cfg) -> tuple[np.ndarray, np.ndarray]:
         objetivo:    ahi se calculan las funciones objetivo
     Asi el umbral y la metrica no se calculan con las mismas filas.
     """
+    # Mezcla las filas con una semilla fija y las corta en dos partes
     rng = np.random.default_rng(int(cfg["split"]["seed"]))
     idx = rng.permutation(len(X_val))
     n_cal = max(int(round(cfg["threshold"]["calib_frac"] * len(X_val))), 1)
     return X_val[idx[:n_cal]], X_val[idx[n_cal:]]
 
 
+# Toma max_rows filas al azar, sin repetir. Si hay menos filas o no hay tope, deja todas.
+# La semilla por defecto es fija, asi que siempre salen las mismas filas.
 def subsample(X: np.ndarray, max_rows, seed: int = 42) -> np.ndarray:
     if max_rows is None or len(X) <= max_rows:
         return X
@@ -201,7 +222,10 @@ def train_for(cfg, detector: str, X_train: np.ndarray) -> np.ndarray:
     """Filas de entrenamiento que usa cada detector. A LOF se le pasan menos, porque
     guarda todo el train en memoria."""
     opt = cfg["optimization"]
+    # Todos los detectores parten con el tope max_train_rows
     X = subsample(X_train, opt.get("max_train_rows"))
+    # LOF tiene ademas su propio tope. Ojo: se aplica despues del anterior, asi que no
+    # tiene efecto si es mayor que max_train_rows.
     if detector == "lof":
         X = subsample(X, opt.get("max_train_rows_lof"))
     return X
@@ -214,16 +238,22 @@ def mcc_from_rates(tpr: float, fpr: float, prevalence: float) -> float:
     """MCC que se obtendria si la proporcion de ataques fuera `prevalence`, calculado
     con el TPR y el FPR. Como TPR y FPR no dependen de cuantos ataques haya, sirve
     para reportar el MCC en un escenario con pocos ataques sin tener que botar datos."""
+    # Reconstruye la matriz de confusion (en proporciones) con TPR, FPR y la prevalencia
     p, n = prevalence, 1.0 - prevalence
     tp, fn, fp, tn = p * tpr, p * (1 - tpr), n * fpr, n * (1 - fpr)
+    # Formula del MCC. Si el denominador es 0, se devuelve 0.
     den = np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
     return float((tp * tn - fp * fn) / den) if den > 0 else 0.0
 
 
+# Calcula las metricas que usan etiquetas, comparando lo real con lo predicho.
+# Etiquetas: 0 = normal, 1 = ataque.
 def supervised_metrics(y_true: np.ndarray, y_pred: np.ndarray, prevalences=()) -> Dict[str, float]:
     from sklearn.metrics import (balanced_accuracy_score, confusion_matrix, f1_score,
                                  matthews_corrcoef, precision_score, recall_score)
+    # Matriz de confusion: tn, fp, fn y tp
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+    # FPR = normales marcados como ataque. TPR (recall) = ataques detectados.
     fpr = fp / (fp + tn) if (fp + tn) else 0.0
     tpr = tp / (tp + fn) if (tp + fn) else 0.0
     out = {
@@ -236,6 +266,7 @@ def supervised_metrics(y_true: np.ndarray, y_pred: np.ndarray, prevalences=()) -
         "FNR": float(1 - tpr) if (fn + tp) else 0.0,
         "TP": int(tp), "TN": int(tn), "FP": int(fp), "FN": int(fn),
     }
+    # MCC ajustado: como seria con esa proporcion de ataques (por ejemplo, 5 % y 10 %)
     for pi in prevalences:
         out[f"MCC_pi{int(round(pi * 100)):02d}"] = mcc_from_rates(tpr, fpr, pi)
     return out
@@ -244,6 +275,7 @@ def supervised_metrics(y_true: np.ndarray, y_pred: np.ndarray, prevalences=()) -
 def ranking_metrics(y_true: np.ndarray, scores: np.ndarray) -> Dict[str, float]:
     """Metricas que no dependen del umbral (AUROC y AUPRC)."""
     from sklearn.metrics import average_precision_score, roc_auc_score
+    # AUROC y AUPRC necesitan ambas clases. Si falta una, no se pueden calcular.
     if len(np.unique(y_true)) < 2:
         return {"AUROC": float("nan"), "AUPRC": float("nan")}
     return {"AUROC": float(roc_auc_score(y_true, scores)),

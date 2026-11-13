@@ -1,5 +1,5 @@
 """
-edge_benchmark.py - Etapa 3: cuanto le cuesta al dispositivo de borde correr cada modelo.
+4_edge_benchmark.py - Etapa 3: cuanto le cuesta al dispositivo de borde correr cada modelo.
 
 Este script esta hecho para correr en la Raspberry Pi 5. Los modelos se entrenan
 en el PC; aqui solo se hacen predicciones (el autoencoder corre solo con NumPy,
@@ -54,6 +54,7 @@ import psutil               # noqa: E402
 from common import load_config, models_dir, results_dir, save_json, splits_dir   # noqa: E402
 
 
+# Reune los datos del equipo: modelo, nucleos y RAM
 def device_info() -> dict:
     model = ""
     try:
@@ -71,7 +72,7 @@ def load_edge_sample(cfg) -> np.ndarray:
     necesite pyarrow."""
     p = splits_dir(cfg) / "edge_sample.csv"
     if not p.exists():
-        raise SystemExit(f"Falta {p}. Ejecute prepare_splits.py o copie el archivo a la Raspberry.")
+        raise SystemExit(f"Falta {p}. Ejecute 1_prepare_splits.py o copie el archivo a la Raspberry.")
     return pd.read_csv(p).to_numpy(dtype=np.float32)
 
 
@@ -80,14 +81,17 @@ def worker(model_path: str, cfg_path: str | None, n_runs: int, n_warmup: int) ->
     cfg = load_config(cfg_path)
     X = load_edge_sample(cfg)
     proc = psutil.Process(os.getpid())
+    # Memoria antes de cargar el modelo, para saber cuanto sube despues
     rss0 = proc.memory_info().rss
     with open(model_path, "rb") as fh:
         det = pickle.load(fh)
     rss_loaded = proc.memory_info().rss
     rng = np.random.default_rng(42)
+    # Calentamiento: estas predicciones no se miden
     for _ in range(n_warmup):
         i = int(rng.integers(0, len(X)))
         det.scores(X[i:i + 1])
+    # Mide la latencia de cada prediccion, con filas elegidas al azar
     lat = np.empty(n_runs)
     cpu0, wall0 = time.process_time(), time.perf_counter()
     for k in range(n_runs):
@@ -102,6 +106,7 @@ def worker(model_path: str, cfg_path: str | None, n_runs: int, n_warmup: int) ->
     except ImportError:                            # Windows (solo para probar el flujo)
         mi = proc.memory_info()
         peak = getattr(mi, "peak_wset", mi.rss) / 1024 ** 2
+    # Convierte el tiempo medido en uso de CPU segun el ritmo de flujos por segundo
     ncpu = psutil.cpu_count() or 1
     cpu_ms = cpu / n_runs * 1000.0
     rate = float(cfg["edge"]["flow_rate_per_s"])
@@ -119,6 +124,7 @@ def worker(model_path: str, cfg_path: str | None, n_runs: int, n_warmup: int) ->
     }
 
 
+# Revisa si el modelo cumple cada limite del borde
 def meets(cfg, r: dict) -> dict:
     e = cfg["edge"]
     lat = r["latency_p95_ms"] if e["latency_stat"] == "p95" else r["latency_median_ms"]
@@ -143,6 +149,7 @@ def check_env(cfg) -> None:
                   "(pip install scikit-learn==...) o los modelos pueden no cargar.")
 
 
+# Mide todos los modelos de index.json, cada uno en su propio proceso
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -157,6 +164,7 @@ def main() -> None:
     n_runs = args.runs or edge["n_inference_runs"]
     n_warm = args.warmup if args.warmup is not None else edge["n_warmup_runs"]
 
+    # Modo worker: mide un solo modelo, imprime el resultado y termina
     if args.worker:
         print("RESULT " + json.dumps(worker(args.worker, args.config, n_runs, n_warm)))
         return
@@ -171,7 +179,7 @@ def main() -> None:
 
     index_path = models_dir(cfg) / "index.json"
     if not index_path.exists():
-        raise SystemExit(f"No existe {index_path}: ejecute primero optimize.py.")
+        raise SystemExit(f"No existe {index_path}: ejecute primero 3_optimize.py.")
     index = json.loads(index_path.read_text(encoding="utf-8"))
     env = dict(os.environ)
     for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
@@ -180,16 +188,19 @@ def main() -> None:
     rows = []
     for k, e in enumerate(index):
         tag = f"{e['detector']}/{e['metric']}/seed{e['seed']}/rank{e['rank']}"
+        # Vuelve a ejecutar este mismo script como worker, para medir el modelo en un proceso nuevo
         cmd = [sys.executable, str(Path(__file__).resolve()), "--worker",
                str(index_path.parent / e["file"]), "--runs", str(n_runs), "--warmup", str(n_warm)]
         if args.config:
             cmd += ["--config", args.config]
         p = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        # Busca en la salida del worker la linea con el resultado
         line = next((ln for ln in p.stdout.splitlines() if ln.startswith("RESULT ")), None)
         if p.returncode != 0 or line is None:
             print(f"[{k + 1}/{len(index)}] {tag}  [!] {p.stderr.strip()[-300:]}")
             continue
         res = json.loads(line[7:])
+        # Une los datos del modelo, sus mediciones y si cumple los limites
         row = {k2: v for k2, v in e.items() if k2 not in ("params", "file")} | res | meets(cfg, res)
         row["platform"] = info["device_model"]
         rows.append(row)
@@ -201,6 +212,7 @@ def main() -> None:
         raise SystemExit("No se pudo medir ningun modelo (vea los errores de arriba).")
     out = results_dir(cfg)
     out.mkdir(parents=True, exist_ok=True)
+    # Guarda las mediciones y los limites usados
     pd.DataFrame(rows).to_csv(out / "edge_benchmark.csv", index=False)
     save_json({**info, "max_latency_ms": edge["max_latency_ms"],
                "max_cpu_percent": edge["max_cpu_percent"], "max_ram_mb": edge["max_ram_mb"],
