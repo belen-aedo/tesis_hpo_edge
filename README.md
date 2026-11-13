@@ -238,4 +238,4 @@ espacios de búsqueda, trials, semillas y límites del borde) es idéntico.
 
 Efecto en los datos: 211 043 → 93 455 flujos únicos. Las filas idénticas entre bloques bajan de
 55 % a 0,5 % (validación frente a train) y de 56 % a 0,2 % (normal de `test_final` frente a train).
-Ransomware queda con 25 flujos por mitad de prueba: eran unos 60 flujos distintos repetidos miles de veces.
+Ransomware queda con 250 flujos distintos (25 por mitad de prueba): sus 20 000 filas originales eran copias de esos 250 (unas 80 copias de cada uno). Los 13 flujos ambiguos (misma fila con etiqueta normal y de ataque) aparecían 7 122 veces en total.
