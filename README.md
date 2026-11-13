@@ -35,7 +35,10 @@ tesis_hpo_edge/
 │   ├── objectives.py         } no permite importar un archivo cuyo nombre
 │   └── search_space.py       } empieza con un dígito.
 ├── tests/                   <- prueba rápida con datos sintéticos
-├── cuaderno_funciones.ipynb <- explicación de cada función, con ejemplos ejecutables
+├── tesis_pipeline.ipynb     <- CUADERNO PRINCIPAL: el experimento de punta a punta, con
+│                               trazabilidad (commit, versiones, config, semillas, hashes)
+│                               y verificación de reproducibilidad
+├── cuaderno_funciones.ipynb <- anexo: explicación de cada función, con ejemplos ejecutables
 ├── data/splits/             <- bloques train / val / test (los crea 1_prepare_splits.py)
 ├── outputs/                 <- modelos, estudios de Optuna, resultados y tablas LaTeX
 ├── run_all.py               <- corre las etapas en orden
