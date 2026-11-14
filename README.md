@@ -4,17 +4,13 @@ Ajuste de hiperparámetros **con métricas no supervisadas** para detectores de 
 (Isolation Forest, LOF y Autoencoder) sobre **TON_IoT (Network)**, pensado para dispositivos de
 borde (**Raspberry Pi 5**).
 
-El preprocesamiento fue facilitado por el Profesor Guía Dr Juan Ignacio Iturbe-Araya
-el **preprocessor  tal como está**: no se modifica
-ninguno de sus `.py`. Todo lo demás es código de este proyecto.
-
 ---
 
 ## 1. Qué hay en la carpeta
 
 ```
 tesis_hpo_edge/
-├── preprocessor/            <- aquí va el preprocessor (ver preprocessor/LEEME.txt)
+├── preprocessor/           
 ├── Datasets/
 │   ├── Sources/TON-IoT/Train_Test_datasets/Train_Test_Network_dataset/
 │   │                        <- aquí va Train_Test_Network.csv (ver el LEEME.txt de esa carpeta)
