@@ -271,7 +271,7 @@ def main() -> None:
     mode = cfg["features"]["mode"]
     # Avisa si las columnas elegidas por el preprocessor usaron etiquetas
     if mode == "selector" and cfg["features"]["selector"] != "vif":
-        print(f"[!] AVISO: el selector '{cfg['features']['selector']}' del profesor usa etiquetas "
+        print(f"[!] AVISO: el selector '{cfg['features']['selector']}' del paso 04 usa etiquetas "
               "(y su train incluye ataques). Declarelo como limitacion o use features.mode: "
               "unsupervised.")
 

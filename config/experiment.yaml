@@ -7,7 +7,7 @@
 
 # ---------------------------------------------------------------- RUTAS ------
 paths:
-  # Carpeta "Datasets" donde el preprocessor del profesor deja Parquet/<dataset>/.
+  # Carpeta "Datasets" donde el preprocesador deja Parquet/<dataset>/.
   # Relativa a esta carpeta del proyecto, o absoluta (p. ej. si prefieres seguir
   # usando la de antes:  C:/Users/belen/Desktop/Taller de investigacion/Datasets)
   datasets_root: Datasets
@@ -22,7 +22,7 @@ dataset:
   attack_type_col: type          # tipo de ataque (solo para reportar recall por tipo)
   drop_cols: [category, label, type]   # nunca son caracteristicas
 
-# ---------------------------------------------- QUE SALIDA DEL PROFESOR USAR --
+# ---------------------------------------------- QUE SALIDA DEL PREPROCESADOR USAR
 input:
   # stratified = muestra del 10 % (rapida, para desarrollar)
   # processed  = dataset completo (para la corrida final de la tesis)
@@ -30,7 +30,7 @@ input:
 
 features:
   # unsupervised = seleccion SIN etiquetas hecha aqui, solo con trafico normal (recomendado)
-  # selector     = usa las columnas que eligio el paso 04 del profesor (usa etiquetas, salvo vif)
+  # selector     = usa las columnas que eligio el paso 04 del preprocesador (usa etiquetas, salvo vif)
   # all          = todas las columnas numericas que deja el preprocessor
   mode: unsupervised
   selector: vif                  # solo si mode = selector: vif | l1_lasso | f_classif | ...

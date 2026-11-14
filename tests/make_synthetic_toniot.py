@@ -1,6 +1,6 @@
 """
 make_synthetic_toniot.py - genera datos SINTETICOS con el mismo formato que deja el
-preprocessor del profesor para Ton-IoT (leido de su codigo: 02_preprocessing.py):
+preprocesador para Ton-IoT (leido de su codigo: 02_preprocessing.py):
 
     <datasets_root>/Parquet/Ton-IoT/train_stratified.(parquet|csv)  y  test_stratified.*
     columnas: caracteristicas numericas en [0,1] (MinMax) + one-hot int8

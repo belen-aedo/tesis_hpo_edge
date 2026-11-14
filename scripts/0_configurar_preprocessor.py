@@ -1,5 +1,5 @@
 """
-Prepara el preprocessor del profesor para que funcione dentro de este proyecto.
+Prepara el preprocesador para que funcione dentro de este proyecto.
 Solo edita sus archivos de configuracion, no sus .py.
 
 Hace dos cambios:
@@ -114,7 +114,7 @@ def main() -> int:
     yml, js, v2 = PRE / "config.yaml", PRE / "config.json", PRE / "preprocessor_v2"
     faltan = [str(p.relative_to(ROOT)) for p in (yml, js, v2) if not p.exists()]
     if faltan:
-        print("Falta copiar el preprocessor del profesor dentro de la carpeta 'preprocessor/'.\n"
+        print("Falta copiar el preprocesador dentro de la carpeta 'preprocessor/'.\n"
               "Faltan: " + ", ".join(faltan) + "\n"
               "Descomprima preprocessor.zip y copie el CONTENIDO de su carpeta 'preprocessor' "
               "(preprocessor_v2/, config.yaml, config.json, ...) dentro de 'preprocessor/'.")

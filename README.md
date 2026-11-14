@@ -43,13 +43,13 @@ tesis_hpo_edge/
 ```
 
 La carpeta tiene que estar en una ruta **sin tildes ni espacios** (ejemplo:
-`C:\Users\belen\Desktop\tesis_hpo_edge`). El código del profesor lee los archivos con la codificación de Windows y las tildes le pueden dar problemas.
+`C:\Users\belen\Desktop\tesis_hpo_edge`). El código del preprocesador lee los archivos con la codificación de Windows y las tildes le pueden dar problemas.
 
 ## 2. Por dónde pasan los datos (y quién ve las etiquetas)
 
 | Etapa                       | Script        | ¿Usa etiquetas? |
 |-----------------------------|---------------|------------------|
-| Preprocesar (profesor)      | pasos 00–03   | su `train` mezcla tráfico normal y ataques |
+| Preprocesar                 | pasos 00–03   | su `train` mezcla tráfico normal y ataques |
 | Bloques                     | `1_prepare_splits.py` | solo para separar lo normal de los ataques; **train y val tienen solo tráfico normal** |
 | Selección de variables y escalado | `1_prepare_splits.py` | **no**: usa solo el train normal |
 | Optimización no supervisada | `3_optimize.py` | **no** (ni siquiera abre los `test_*`) |
@@ -83,19 +83,18 @@ python scripts\0_check_env.py
 
 `tensorflow` es opcional: si está instalado, el autoencoder se entrena con Keras; si no, con
 scikit-learn. `lightgbm` y `statsmodels` solo hacen falta si usas `features.mode: selector`
-(paso 04 del profesor).
+(paso 04 del preprocesador).
 
 ## 4. Paso a paso
 
 **A. Preparar (una sola vez)**
 
-1. Descomprime `preprocessor.zip` y copia el **contenido** de su carpeta `preprocessor` dentro de
-   `tesis_hpo_edge\preprocessor\`. Tiene que quedar `preprocessor\preprocessor_v2\`,
-   `preprocessor\config.yaml`, etc.
+1. El preprocesador ya viene en la carpeta `preprocessor\` (con `preprocessor\preprocessor_v2\`,
+   `preprocessor\config.yaml`, etc.).
 2. Copia `Train_Test_Network.csv` (TON_IoT, sin modificar) en
    `Datasets\Sources\TON-IoT\Train_Test_datasets\Train_Test_Network_dataset\`.
 3. Corre `python scripts\0_configurar_preprocessor.py`. Este script deja el `config.yaml` y el
-   `config.json` del profesor apuntando a esta carpeta y guarda copias `.bak_proyecto` (el
+   `config.json` del preprocesador apuntando a esta carpeta y guarda copias `.bak_proyecto` (el
    porqué está en la sección 8).
 
 **B. Prueba corta de todo el flujo (25 trials, 1 semilla; con Keras demora unos 15–30 min)**
@@ -153,7 +152,7 @@ python run_all.py --etapas evaluar,reporte
 ## 6. Opciones que puedes cambiar (`config/experiment.yaml`)
 
 - `input.variant`: `stratified` (10 % de los datos, más rápido) o `processed` (todos los datos, para la corrida final).
-- `features.mode`: `unsupervised` (recomendado), `selector` (columnas del paso 04 del profesor, que usan etiquetas salvo `vif`) o `all`.
+- `features.mode`: `unsupervised` (recomendado), `selector` (columnas del paso 04 del preprocesador, que usan etiquetas salvo `vif`) o `all`.
 - `features.max_features` (40): con menos columnas los modelos son más livianos; con más, tienen más información.
 - `threshold.q` (0.95): la tasa de falsas alarmas buscada es 1 − q. Es una regla fija, no un hiperparámetro.
 - `split.test_target_prevalence`: con `null` el test queda con su proporción natural de ataques; con `0.10` se sacan ataques hasta que sean el 10 %.
@@ -164,7 +163,7 @@ python run_all.py --etapas evaluar,reporte
 
 | Sección | Decisión | Archivo y función | Parámetro (`experiment.yaml`) o constante |
 |---|---|---|---|
-| 3.1.3 | Preprocesador del profesor (pasos 00–03) | `run_all.py` → `etapa_preprocesar` | `input.variant` |
+| 3.1.3 | Preprocesador (pasos 00–02) | `run_all.py` → `etapa_preprocesar` | `input.variant` |
 | 3.2.2 | Selección de variables sin etiquetas | `1_prepare_splits.py` → `select_unsupervised` | `features.max_features`, `min_minority_freq`, `max_abs_corr`; muestra de 20 000 filas (fija) |
 | 3.2.2 | Estandarización con el train normal | `1_prepare_splits.py` → `fit_scaler`, `apply_scaler` | `scaling.method`, `scaling.clip` |
 | 3.2.3 | Train/val (85/15 del normal) | `1_prepare_splits.py` → `main` | `split.val_frac_of_normal`, `split.seed` |
@@ -194,7 +193,7 @@ python run_all.py --etapas evaluar,reporte
 | 3.2.11 | Pruebas anti-fuga (datos sintéticos) | `tests/smoke_test.py` | — |
 
 ## 7. Limitaciones 
-1. El preprocessor del profesor ajusta su MinMax y su imputación con un `train` que **incluye
+1. El preprocesador ajusta su MinMax y su imputación con un `train` que **incluye
    ataques** (solo mínimos, máximos y medias de las columnas numéricas). Aquí, después, se vuelve a
    escalar usando solo el train normal.
 2. La selección de variables sin etiquetas (varianza/frecuencia y correlación) puede descartar

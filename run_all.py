@@ -2,7 +2,7 @@
 run_all.py - ejecuta las etapas del proyecto en orden (Windows, Linux o Raspberry).
 
 Etapas (en este orden):
-    preprocesar   pasos 00-03 del preprocessor del profesor (CSV -> Parquet)   [PC]
+    preprocesar   pasos 00-02 del preprocesador (CSV -> Parquet)             [PC]
     splits        1_prepare_splits.py : bloques train / val / test                [PC]
     diagnostico   2_diagnose.py       : ¿sirven las metricas? (opcional)          [PC]
     optimizar     3_optimize.py --all : Optuna + oraculo + linea base             [PC]
@@ -51,10 +51,10 @@ def run(cmd: list[str], cwd: Path, env_extra: dict | None = None) -> None:
     print(f"   ok en {time.time() - t0:.1f}s", flush=True)
 
 
-# Corre los pasos del preprocessor del profesor, sin modificar su codigo
+# Corre los pasos del preprocesador
 def etapa_preprocesar(cfg: dict) -> None:
     if not PRE_V2.exists():
-        sys.exit("Falta el preprocessor del profesor en preprocessor/ (vea LEEME en esa carpeta).")
+        sys.exit("Falta el preprocesador en preprocessor/ (vea LEEME en esa carpeta).")
     run([sys.executable, ROOT / "scripts" / "0_configurar_preprocessor.py"], ROOT)
     # Protege el CSV original: el paso 00 lee 'Train_Test_Labels.csv' si existe (si no, lee su
     # propio archivo de salida) y escribe 'preprocessed.csv' (la ruta "path" de config.json),
@@ -66,7 +66,7 @@ def etapa_preprocesar(cfg: dict) -> None:
     if not lab.exists():
         print(f"copia de respaldo del CSV original -> {lab.name}")
         shutil.copy2(net, lab)
-    # PYTHONUTF8: el codigo del profesor imprime emojis y lee config.yaml con open() sin
+    # PYTHONUTF8: el codigo del preprocesador imprime emojis y lee config.yaml con open() sin
     # codificacion; en Windows (cp1252) eso falla si la salida se redirige o hay tildes.
     env = {"KMP_DUPLICATE_LIB_OK": "True", "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
     # Cada paso del preprocessor se ejecuta para el dataset de la configuracion
@@ -76,7 +76,7 @@ def etapa_preprocesar(cfg: dict) -> None:
     # El paso 03 (muestra del 10 %) solo hace falta con input.variant: stratified
     if cfg["input"]["variant"] == "stratified":
         pasos.append("03_stratified_subset.py")
-    # El paso 04 solo hace falta si se usan las columnas elegidas por el profesor
+    # El paso 04 solo hace falta si se usan las columnas elegidas por el paso 04
     if cfg["features"]["mode"] == "selector":
         pasos.append("04_feature_selection.py")
     for p in pasos:
@@ -92,7 +92,7 @@ def main() -> None:
     ap.add_argument("--config", default=None, help="yaml que se mezcla sobre config/experiment.yaml")
     ap.add_argument("--rapido", action="store_true", help="optimize con 25 trials y 1 semilla")
     ap.add_argument("--saltar-preprocessor", action="store_true",
-                    help="no correr los pasos del profesor (ya existen los Parquet)")
+                    help="no correr los pasos del preprocesador (ya existen los Parquet)")
     args = ap.parse_args()
 
     # Convierte el texto '--etapas a,b' en una lista y revisa que las etapas existan
